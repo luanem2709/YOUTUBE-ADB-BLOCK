@@ -38,15 +38,35 @@ const settingInputs = {
 let toastTimer = null;
 
 function initTabs() {
-    document.querySelectorAll(".tab-btn").forEach((btn) => {
+    const dockItems = document.querySelectorAll(".dock-item");
+    const indicator = document.getElementById("dockIndicator");
+
+    function moveIndicator(activeBtn) {
+        if (!indicator || !activeBtn) return;
+        indicator.style.width = activeBtn.offsetWidth + "px";
+        indicator.style.transform = `translateX(${activeBtn.offsetLeft - 6}px)`;
+    }
+
+    dockItems.forEach((btn) => {
         btn.addEventListener("click", () => {
             const tab = btn.dataset.tab;
-            document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+
+            dockItems.forEach((b) => {
+                b.classList.remove("active");
+                b.setAttribute("aria-selected", "false");
+            });
             document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+
             btn.classList.add("active");
+            btn.setAttribute("aria-selected", "true");
             $("panel-" + tab).classList.add("active");
+            moveIndicator(btn);
         });
     });
+
+    const active = document.querySelector(".dock-item.active");
+    moveIndicator(active);
+    requestAnimationFrame(() => moveIndicator(active));
 }
 
 function showToast(message) {

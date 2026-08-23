@@ -1,0 +1,42 @@
+{
+  "name": "Youtube Ad Blocker",
+  "description": "Chặn và bỏ qua quảng cáo YouTube: video ads, banner và overlay.",
+  "version": "1.0",
+  "manifest_version": 3,
+  "icons": {
+    "32": "images/icon32.png",
+    "48": "images/icon48.png",
+    "128": "images/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "32": "images/icon32.png",
+      "48": "images/icon48.png",
+      "128": "images/icon128.png"
+    }
+  },
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["content-main.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "css": ["content.css"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{a8c4e1f2-9b3d-4e7a-8f1c-6d5b2a0e9c74}",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  }
+}

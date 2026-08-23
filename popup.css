@@ -362,6 +362,43 @@ body {
     box-shadow: 0 0 16px var(--blue-glow);
 }
 
+.tab-status {
+    font-size: 10px;
+    color: var(--blue-light);
+    margin-top: 6px;
+    font-weight: 600;
+    padding: 4px 10px;
+    background: var(--blue-soft);
+    border-radius: var(--radius-pill);
+    display: inline-block;
+    border: 1px solid rgba(96, 165, 250, 0.2);
+}
+
+.breakdown-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.breakdown-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: var(--surface-strong);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.breakdown-item strong {
+    color: var(--blue-light);
+    font-size: 13px;
+}
+
 /* Setting tiles */
 .setting-stack {
     display: flex;

@@ -4,7 +4,7 @@
     "description": "Tên extension"
   },
   "extDescription": {
-    "message": "Chặn quảng cáo video, banner và overlay trên YouTube. Giao diện tiếng Việt, thống kê và cài đặt chi tiết.",
+    "message": "Chặn quảng cáo YouTube 3 lớp: lọc InnerTube, DNR, DOM. Tiếng Việt, Shorts, Music, whitelist kênh, thống kê chi tiết.",
     "description": "Mô tả extension"
   }
 }

@@ -1,0 +1,12 @@
+.cursor/
+.claude/
+.codex/
+.copilot/
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
+node_modules/
+agent-transcripts/
+agent-tools/

@@ -4,7 +4,7 @@ Extension chặn quảng cáo YouTube — **FUNNYGAME** · **LuanEm2709**
 
 Giao diện tiếng Việt · Chrome & Firefox (Manifest V3)
 
-Repo: https://github.com/Xiata279/YOUTUBE-ADB-BLOCK
+Repo: https://github.com/luanem2709/YOUTUBE-ADB-BLOCK
 
 ## Tính năng v2.0
 

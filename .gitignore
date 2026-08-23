@@ -11,3 +11,9 @@ dist/
 node_modules/
 agent-transcripts/
 agent-tools/
+installer/bin/
+installer/obj/
+installer/publish/
+installer/publish-*/
+*.user
+*.suo

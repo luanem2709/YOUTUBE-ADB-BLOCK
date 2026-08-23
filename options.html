@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cài đặt · FUNNYGAME Ad Block</title>
+    <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+    <div class="page">
+        <header class="page-header">
+            <img src="images/logo.gif" alt="FUNNYGAME" class="logo" />
+            <div>
+                <h1>Cài đặt FUNNYGAME</h1>
+                <p>Quản lý nâng cao extension chặn quảng cáo YouTube</p>
+            </div>
+        </header>
+
+        <section class="section">
+            <h2>Mục tiêu hàng ngày</h2>
+            <p class="hint">Số quảng cáo mục tiêu hiển thị trên thanh tiến độ popup.</p>
+            <input type="number" id="dailyGoal" min="10" max="500" value="50" />
+        </section>
+
+        <section class="section">
+            <h2>Whitelist kênh</h2>
+            <p class="hint">Một kênh mỗi dòng (ID UC... hoặc @handle). Quảng cáo sẽ không bị chặn trên các kênh này.</p>
+            <textarea id="whitelistChannels" rows="6" placeholder="UCxxxxxxxxxxxxxxxxxx&#10;@tenkenh"></textarea>
+        </section>
+
+        <section class="section">
+            <h2>Sao lưu & khôi phục</h2>
+            <div class="btn-row">
+                <button type="button" class="btn" id="exportBtn">Xuất cài đặt</button>
+                <button type="button" class="btn" id="importBtn">Nhập cài đặt</button>
+                <input type="file" id="importFile" accept="application/json" hidden />
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Thống kê 7 ngày</h2>
+            <div id="historyChart" class="history-chart"></div>
+        </section>
+
+        <footer class="footer">
+            <button type="button" class="btn btn-primary" id="saveBtn">Lưu cài đặt</button>
+            <p>Phát triển bởi <strong>LuanEm2709</strong></p>
+        </footer>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script src="options.js"></script>
+</body>
+</html>

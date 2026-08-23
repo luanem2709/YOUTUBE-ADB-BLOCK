@@ -1,51 +1,52 @@
-# YOUTUBE-ADB-BLOCK
+# YOUTUBE-ADB-BLOCK v2.0
 
 Extension chặn quảng cáo YouTube — **FUNNYGAME** · **LuanEm2709**
 
-Giao diện **100% tiếng Việt**, hỗ trợ Chrome & Firefox (Manifest V3).
+Giao diện tiếng Việt · Chrome & Firefox (Manifest V3)
 
 Repo: https://github.com/Xiata279/YOUTUBE-ADB-BLOCK
 
-## Tính năng
+## Tính năng v2.0
 
-### Chặn quảng cáo
-- Bỏ qua quảng cáo video (preroll, midroll, skip / tua nhanh 16x)
-- Ẩn banner, masthead, quảng cáo trong bảng tin
-- Xóa overlay trên trình phát video
-- Tắt tiếng quảng cáo tự động
+### Chặn quảng cáo (3 lớp)
+1. **Lọc InnerTube** — gỡ `adPlacements` / `playerAds` trước khi player đọc
+2. **DNR** — chặn request domain quảng cáo (doubleclick, pagead...)
+3. **DOM fallback** — tua nhanh, skip, ẩn banner/overlay
 
-### Giao diện & cài đặt
-- 3 tab: **Tổng quan** · **Cài đặt** · **Hỗ trợ**
-- Bật/tắt từng loại quảng cáo riêng
-- Thống kê tổng, phiên hiện tại, thời gian tiết kiệm
-- Thanh tiến độ mục tiêu hàng ngày
-- Đặt lại thống kê, tải lại tab, mở YouTube
+### Nền tảng
+- YouTube thường, **Shorts**, **Music**, mobile web
+- Chống popup **anti-adblock**
+- Whitelist kênh (không chặn trên kênh chỉ định)
 
-## Cài đặt Chrome
+### Giao diện
+- Popup 3 tab (dock menu 2026)
+- Thống kê chi tiết + lịch sử 7 ngày
+- Trang **Cài đặt nâng cao** (export/import JSON)
 
-1. Clone repo
-2. Mở `chrome://extensions/`
-3. Bật **Chế độ nhà phát triển**
-4. **Tải extension đã giải nén** → chọn thư mục chứa `manifest.json`
+## Cài đặt
 
-## Cài đặt Firefox
+### Chrome
+1. Clone repo → `chrome://extensions/` → Developer mode → Load unpacked
 
-1. Mở `about:debugging#/runtime/this-firefox`
-2. **Load Temporary Add-on...**
-3. Chọn `manifest.json`
+### Firefox
+1. `about:debugging` → Load Temporary Add-on → chọn `manifest.json`
+
+### Build zip
+```bash
+node scripts/build.js
+```
+File output: `dist/funnygame-adblock-v2.0.0.zip`
 
 ## Cấu trúc
 
 ```
-├── manifest.json
-├── popup.html / popup.css / popup.js
-├── content.js / content-main.js / content.css
-├── _locales/vi/messages.json
-└── images/
-    ├── logo.gif
-    ├── icon32.png
-    ├── icon48.png
-    └── icon128.png
+├── manifest.json / background.js
+├── content-main.js   # MAIN world: lọc InnerTube, skip, anti-adblock
+├── content.js        # Isolated: observer, whitelist, thống kê
+├── popup.* / options.*
+├── rules/dnr_rules.json
+├── _locales/vi/
+└── PRIVACY.md
 ```
 
 ## License

@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "FUNNYGAME Chặn Quảng Cáo YouTube",
+    "description": "Tên extension"
+  },
+  "extDescription": {
+    "message": "Chặn quảng cáo video, banner và overlay trên YouTube. Giao diện tiếng Việt, thống kê và cài đặt chi tiết.",
+    "description": "Mô tả extension"
+  }
+}

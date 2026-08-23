@@ -3,10 +3,21 @@ let adsBlockedCount = 0;
 let debounceTimer = null;
 const DEBOUNCE_DELAY = 50;
 
+const DEFAULT_SETTINGS = {
+    blockVideo: true,
+    blockBanner: true,
+    blockOverlay: true,
+    muteAds: true,
+    fastSkip: true,
+};
+
+let settings = { ...DEFAULT_SETTINGS };
+
 function initialize() {
-    chrome.storage.local.get(["enabled", "adsBlocked"], (result) => {
+    chrome.storage.local.get(["enabled", "adsBlocked", "settings"], (result) => {
         isEnabled = result.enabled !== undefined ? result.enabled : true;
         adsBlockedCount = result.adsBlocked || 0;
+        settings = { ...DEFAULT_SETTINGS, ...(result.settings || {}) };
 
         if (isEnabled) {
             startObserver();
@@ -15,14 +26,19 @@ function initialize() {
     });
 
     chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === "local" && changes.enabled) {
-            isEnabled = changes.enabled.newValue;
-
-            if (isEnabled) {
-                startObserver();
-                handleAds();
-            } else {
-                stopObserver();
+        if (area === "local") {
+            if (changes.enabled) {
+                isEnabled = changes.enabled.newValue;
+                if (isEnabled) {
+                    startObserver();
+                    handleAds();
+                } else {
+                    stopObserver();
+                }
+            }
+            if (changes.settings) {
+                settings = { ...DEFAULT_SETTINGS, ...changes.settings.newValue };
+                if (isEnabled) handleAds();
             }
         }
     });
@@ -33,6 +49,10 @@ function initialize() {
             incrementBlockCount();
         }
     });
+
+    document.addEventListener("yt-navigate-finish", () => {
+        if (isEnabled) handleAds();
+    });
 }
 
 let observer = null;
@@ -42,11 +62,9 @@ function startObserver() {
 
     const targetNode = document.getElementById("movie_player") || document.body;
 
-    observer = new MutationObserver((mutations) => {
+    observer = new MutationObserver(() => {
         clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-            handleAds();
-        }, DEBOUNCE_DELAY);
+        debounceTimer = setTimeout(handleAds, DEBOUNCE_DELAY);
     });
 
     observer.observe(targetNode, {
@@ -67,25 +85,25 @@ function handleAds() {
     if (!isEnabled) return;
 
     try {
-        skipVideoAd();
-        hideOverlayAds();
-        hideCompanionAds();
-        dismissAdDialogs();
+        if (settings.blockVideo) skipVideoAd();
+        if (settings.blockOverlay) hideOverlayAds();
+        if (settings.blockBanner) hideCompanionAds();
+        if (settings.blockOverlay) dismissAdDialogs();
     } catch (error) {
-        console.debug("[YT Ad Blocker] Error in handleAds:", error.message);
+        console.debug("[FUNNYGAME] Lỗi xử lý quảng cáo:", error.message);
     }
 }
 
 function skipVideoAd() {
     const moviePlayer = document.getElementById("movie_player");
     const isAdActive = moviePlayer && (
-        moviePlayer.classList.contains("ad-showing") || 
+        moviePlayer.classList.contains("ad-showing") ||
         moviePlayer.classList.contains("ad-interrupting")
     );
-    
+
     const adModule = document.querySelector(".video-ads.ytp-ad-module");
     const hasAdModuleContent = adModule && adModule.children.length > 0;
-    
+
     const skipSelectors = [
         "button.ytp-ad-skip-button-modern.ytp-button",
         ".ytp-ad-skip-button-slot button",
@@ -112,33 +130,24 @@ function skipVideoAd() {
         return;
     }
 
-    console.log("[YT Ad Blocker] Ad detected!", {
-        isAdActive,
-        hasAdModuleContent,
-        hasSkipButton,
-        hasSurveySkip
-    });
-
     const adVideo = document.querySelector("video.html5-main-video");
 
     if (adVideo) {
-        adVideo.playbackRate = 16;
-        adVideo.muted = true;
+        if (settings.fastSkip) {
+            adVideo.playbackRate = 16;
+        }
+        if (settings.muteAds) {
+            adVideo.muted = true;
+        }
+        if (settings.fastSkip && adVideo.duration && isFinite(adVideo.duration)) {
+            adVideo.currentTime = adVideo.duration;
+        }
     }
 
-    if (adVideo && adVideo.duration && isFinite(adVideo.duration)) {
-        adVideo.currentTime = adVideo.duration;
-    }
-
-    console.log("[YT Ad Blocker] Dispatching skip signal to MAIN world...");
     window.postMessage({
         type: "YT_AD_BLOCKER_SKIP",
-        selectors: skipSelectors
+        selectors: skipSelectors,
     }, "*");
-}
-
-function simulateRealClick(element) {
-    console.debug("[YT Ad Blocker] simulateRealClick has been migrated to MAIN world context.");
 }
 
 function hideOverlayAds() {
@@ -149,15 +158,13 @@ function hideOverlayAds() {
     ];
 
     for (const selector of overlaySelectors) {
-        const overlays = document.querySelectorAll(selector);
-        overlays.forEach((overlay) => {
+        document.querySelectorAll(selector).forEach((overlay) => {
             overlay.remove();
             incrementBlockCount();
         });
     }
 }
 
-// Hide companion ads (sidebar, masthead, in-feed suggested ads)
 function hideCompanionAds() {
     const companionSelectors = [
         "#player-ads",
@@ -171,8 +178,7 @@ function hideCompanionAds() {
     ];
 
     for (const selector of companionSelectors) {
-        const companions = document.querySelectorAll(selector);
-        companions.forEach((companion) => {
+        document.querySelectorAll(selector).forEach((companion) => {
             companion.style.setProperty("display", "none", "important");
         });
     }
@@ -189,9 +195,7 @@ function dismissAdDialogs() {
 
     for (const selector of dismissSelectors) {
         const btn = document.querySelector(selector);
-        if (btn) {
-            simulateRealClick(btn);
-        }
+        if (btn) btn.click();
     }
 }
 
@@ -204,6 +208,13 @@ function incrementBlockCount() {
     persistTimer = setTimeout(() => {
         chrome.storage.local.set({ adsBlocked: adsBlockedCount });
     }, 2000);
+
+    if (chrome.storage.session) {
+        chrome.storage.session.get(["sessionAds"], (result) => {
+            const sessionAds = (result.sessionAds || 0) + 1;
+            chrome.storage.session.set({ sessionAds });
+        });
+    }
 }
 
 initialize();

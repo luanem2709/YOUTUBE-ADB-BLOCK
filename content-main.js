@@ -1,5 +1,5 @@
 (function() {
-    console.log("[YT Ad Blocker - Main World] Initializing...");
+    console.debug("[FUNNYGAME] Khởi tạo main world...");
 
     const originalAddEventListener = EventTarget.prototype.addEventListener;
     const originalRemoveEventListener = EventTarget.prototype.removeEventListener;
@@ -61,9 +61,9 @@
             return originalRemoveEventListener.call(this, type, wrapped, options);
         };
 
-        console.log("[YT Ad Blocker - Main World] Event.prototype.isTrusted Proxy Interceptor successfully established!");
+        console.debug("[FUNNYGAME] Đã thiết lập proxy isTrusted");
     } catch (err) {
-        console.error("[YT Ad Blocker - Main World] Failed to register Proxy Interceptor:", err);
+        console.error("[FUNNYGAME] Failed to register Proxy Interceptor:", err);
     }
 
     document.addEventListener("ratechange", (e) => {
@@ -77,7 +77,7 @@
 
             if (isAdShowing) {
                 if (video.playbackRate !== 16) {
-                    console.log(`[YT Ad Blocker - Main World] YouTube tried to reset speed to ${video.playbackRate}x. Forcing back to 16x!`);
+                    console.log(`[FUNNYGAME] YouTube tried to reset speed to ${video.playbackRate}x. Forcing back to 16x!`);
                     video.playbackRate = 16;
                     video.muted = true;
                 }
@@ -92,18 +92,18 @@
     function skipViaPlayerAPI() {
         const player = document.getElementById("movie_player");
         if (player) {
-            console.log("[YT Ad Blocker - Main World] Found movie player:", player, "has skipAd method:", typeof player.skipAd);
+            console.log("[FUNNYGAME] Found movie player:", player, "has skipAd method:", typeof player.skipAd);
             if (typeof player.skipAd === "function") {
                 try {
                     player.skipAd();
-                    console.log("[YT Ad Blocker - Main World] Skipped ad via native movie_player.skipAd() API!");
+                    console.log("[FUNNYGAME] Skipped ad via native movie_player.skipAd() API!");
                     return true;
                 } catch (err) {
-                    console.warn("[YT Ad Blocker - Main World] skipAd() call failed:", err);
+                    console.warn("[FUNNYGAME] skipAd() call failed:", err);
                 }
             }
         } else {
-            console.log("[YT Ad Blocker - Main World] movie_player element not found.");
+            console.log("[FUNNYGAME] movie_player element not found.");
         }
         return false;
     }
@@ -111,7 +111,7 @@
     function simulateRealTrustedClick(element) {
         const rect = element.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) {
-            console.log("[YT Ad Blocker - Main World] Skip button is not visible in viewport yet.");
+            console.log("[FUNNYGAME] Skip button is not visible in viewport yet.");
             return;
         }
 
@@ -139,7 +139,7 @@
             { type: "click", class: MouseEvent }
         ];
 
-        console.log(`[YT Ad Blocker - Main World] Dispatching isTrusted:true click chain on skip button at (${x.toFixed(1)}, ${y.toFixed(1)})...`);
+        console.log(`[FUNNYGAME] Dispatching isTrusted:true click chain on skip button at (${x.toFixed(1)}, ${y.toFixed(1)})...`);
 
         eventTypes.forEach(evtInfo => {
             try {
@@ -153,13 +153,13 @@
 
                 element.dispatchEvent(evt);
             } catch (err) {
-                console.error(`[YT Ad Blocker - Main World] Failed to dispatch event ${evtInfo.type}:`, err);
+                console.error(`[FUNNYGAME] Failed to dispatch event ${evtInfo.type}:`, err);
             }
         });
 
         try {
             element.click();
-            console.log("[YT Ad Blocker - Main World] Standard element.click() executed as final fallback.");
+            console.log("[FUNNYGAME] Standard element.click() executed as final fallback.");
         } catch (err) {
         }
     }
@@ -170,7 +170,7 @@
         const message = event.data;
         if (!message || message.type !== "YT_AD_BLOCKER_SKIP") return;
 
-        console.log("[YT Ad Blocker - Main World] Skip command received from isolated world.");
+        console.log("[FUNNYGAME] Skip command received from isolated world.");
 
         const apiSuccess = skipViaPlayerAPI();
         if (apiSuccess) {
@@ -184,7 +184,7 @@
         for (const selector of selectors) {
             const btn = document.querySelector(selector);
             if (btn) {
-                console.log(`[YT Ad Blocker - Main World] Found skip button via selector "${selector}".`);
+                console.log(`[FUNNYGAME] Found skip button via selector "${selector}".`);
                 simulateRealTrustedClick(btn);
                 clickedAny = true;
                 break;
@@ -195,7 +195,7 @@
             ".ytp-ad-skip-ad-slot button, .ytp-ad-survey-player-overlay-skip-or-preview button"
         );
         if (surveySkip) {
-            console.log("[YT Ad Blocker - Main World] Found active survey skip button.");
+            console.log("[FUNNYGAME] Found active survey skip button.");
             simulateRealTrustedClick(surveySkip);
             clickedAny = true;
         }
@@ -203,9 +203,9 @@
         if (clickedAny) {
             window.postMessage({ type: "YT_AD_BLOCKER_COUNT_INCREMENT" }, "*");
         } else {
-            console.log("[YT Ad Blocker - Main World] No skip button elements could be resolved in the DOM.");
+            console.log("[FUNNYGAME] No skip button elements could be resolved in the DOM.");
         }
     });
 
-    console.log("[YT Ad Blocker - Main World] Initialized successfully.");
+    console.debug("[FUNNYGAME] Main world sẵn sàng.");
 })();

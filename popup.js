@@ -14,7 +14,6 @@ const $ = (id) => document.getElementById(id);
 
 const enableToggle = $("enableToggle");
 const headerStatus = $("headerStatus");
-const masterDesc = $("masterDesc");
 const tabStatus = $("tabStatus");
 const adsBlockedCount = $("adsBlockedCount");
 const sessionCount = $("sessionCount");
@@ -127,7 +126,7 @@ function updateTabStatus() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const url = tabs?.[0]?.url || "";
         if (url.includes("open.spotify.com")) {
-            tabStatus.textContent = "Tab hiện tại: Spotify Web Player";
+            tabStatus.textContent = "Tab hiện tại: Spotify";
             tabStatus.classList.add("active-platform");
             return;
         }
@@ -149,11 +148,9 @@ function updateMasterUI(isEnabled) {
     if (isEnabled) {
         headerStatus.textContent = "Đang bảo vệ";
         headerStatus.classList.remove("off");
-        masterDesc.textContent = "Đang chặn quảng cáo trên YouTube & Spotify";
     } else {
         headerStatus.textContent = "Đã tắt";
         headerStatus.classList.add("off");
-        masterDesc.textContent = "Quảng cáo sẽ hiển thị bình thường";
     }
     Object.values(settingInputs).forEach((input) => {
         if (input) input.disabled = !isEnabled;

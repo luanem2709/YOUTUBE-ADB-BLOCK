@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Thống kê & xếp hạng · FUNNY GAME</title>
+    <link rel="stylesheet" href="stats.css" />
+</head>
+<body>
+    <div class="page">
+        <header class="page-header">
+            <img src="images/logo.gif" alt="FUNNY GAME" class="logo" />
+            <div class="header-text">
+                <h1>Thống kê &amp; xếp hạng</h1>
+                <p>Theo dõi hiệu suất của bạn và đua top người dùng chặn nhiều nhất</p>
+            </div>
+            <button type="button" class="btn btn-ghost" id="refreshBtn">Làm mới</button>
+        </header>
+
+        <section class="section">
+            <h2>Thống kê của bạn</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-val blue" id="adsBlockedCount">0</div>
+                    <div class="stat-lbl">Tổng đã chặn</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val green" id="sessionCount">0</div>
+                    <div class="stat-lbl">Phiên này</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val amber" id="timeSavedCount">0 giây</div>
+                    <div class="stat-lbl">Tiết kiệm</div>
+                </div>
+            </div>
+            <div class="progress-wrap">
+                <div class="progress-header">
+                    <span>Mục tiêu hôm nay</span>
+                    <span id="progressLabel">0 / 50</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+            <div class="breakdown-grid">
+                <div class="breakdown-item"><span>Video</span><strong id="statVideo">0</strong></div>
+                <div class="breakdown-item"><span>Banner</span><strong id="statBanner">0</strong></div>
+                <div class="breakdown-item"><span>Overlay</span><strong id="statOverlay">0</strong></div>
+                <div class="breakdown-item"><span>Anti-adblock</span><strong id="statAnti">0</strong></div>
+            </div>
+        </section>
+
+        <section class="section profile-section">
+            <h2>Hồ sơ đua top</h2>
+            <p class="hint">Bấm avatar để đổi ảnh. Tên hiển thị sẽ hiện trên bảng xếp hạng.</p>
+            <div class="profile-row">
+                <button type="button" class="avatar" id="profileAvatar" title="Bấm để đổi ảnh đại diện">
+                    <span class="avatar-fallback" id="avatarFallback">?</span>
+                    <span class="avatar-overlay">Đổi ảnh</span>
+                </button>
+                <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+                <div class="profile-meta">
+                    <div class="profile-name-row">
+                        <label class="sr-only" for="displayName">Tên hiển thị</label>
+                        <input type="text" id="displayName" maxlength="24" placeholder="Tên hiển thị" />
+                        <button type="button" class="btn btn-primary" id="saveNameBtn">Lưu tên</button>
+                    </div>
+                    <p id="profileSub">Chưa nhận diện tài khoản YouTube</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="arena">
+            <div class="arena-head">
+                <div>
+                    <p class="arena-kicker">Đua top</p>
+                    <h2>Bảng xếp hạng FUNNY GAME</h2>
+                    <p class="hint">Xếp theo số quảng cáo đã chặn. Chặn nhiều hơn để leo hạng.</p>
+                </div>
+                <div class="arena-meta">
+                    <div><span id="totalUsers">0</span><small>Người chơi</small></div>
+                    <div><span id="yourRank">—</span><small>Hạng của bạn</small></div>
+                </div>
+            </div>
+
+            <div class="podium" id="podium">
+                <p class="empty-copy">Chưa có dữ liệu xếp hạng. Mở YouTube và dùng extension để bắt đầu đua top.</p>
+            </div>
+
+            <div class="board" id="rankBoard"></div>
+        </section>
+
+        <div class="footer-actions">
+            <button type="button" class="btn btn-danger" id="resetStatsBtn">Đặt lại thống kê</button>
+        </div>
+        <footer class="footer">
+            <p>Phát triển bởi <strong>LuanEm2709</strong> · Thống kê cục bộ, không gửi lên server</p>
+        </footer>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+    <div class="modal-overlay" id="resetModal">
+        <div class="modal">
+            <h3>Đặt lại thống kê?</h3>
+            <p>Toàn bộ số quảng cáo đã chặn, thời gian tiết kiệm và điểm xếp hạng sẽ về 0. Hành động này không thể hoàn tác.</p>
+            <div class="modal-actions">
+                <button class="btn" id="cancelResetBtn" type="button">Hủy</button>
+                <button class="btn btn-danger" id="confirmResetBtn" type="button">Đặt lại</button>
+            </div>
+        </div>
+    </div>
+    <script src="stats.js"></script>
+</body>
+</html>

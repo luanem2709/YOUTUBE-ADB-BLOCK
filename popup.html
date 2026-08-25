@@ -16,7 +16,7 @@
             </div>
             <div class="header-info">
                 <h1>FUNNYGAME</h1>
-                <p>Chặn quảng cáo YouTube</p>
+                <p>Chặn quảng cáo YouTube &amp; Spotify</p>
                 <div class="header-badges">
                     <span class="badge badge-version" id="versionBadge">v1.3</span>
                     <span class="badge badge-status" id="headerStatus">Đang bảo vệ</span>
@@ -71,6 +71,7 @@
                         <div class="breakdown-item"><span>Banner</span><strong id="statBanner">0</strong></div>
                         <div class="breakdown-item"><span>Overlay</span><strong id="statOverlay">0</strong></div>
                         <div class="breakdown-item"><span>Anti-adblock</span><strong id="statAnti">0</strong></div>
+                        <div class="breakdown-item"><span>Spotify</span><strong id="statSpotify">0</strong></div>
                     </div>
                 </div>
 
@@ -197,6 +198,27 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="card">
+                    <div class="card-title">Nền tảng khác</div>
+                    <div class="setting-stack">
+                        <div class="setting-tile">
+                            <div class="setting-left">
+                                <div class="setting-icon">
+                                    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.59 14.44c-.18.3-.57.4-.87.22-2.38-1.45-5.38-1.78-8.92-.97-.34.08-.68-.13-.76-.47-.08-.34.13-.68.47-.76 3.87-.89 7.19-.51 9.86 1.11.3.19.4.57.22.87zm1.22-2.72c-.23.37-.71.48-1.08.26-2.72-1.67-6.87-2.16-10.09-1.18-.42.12-.86-.11-.99-.53-.12-.42.11-.86.53-.99 3.68-1.11 8.25-.57 11.37 1.35.37.22.48.71.26 1.09zm.11-2.83C14.7 8.87 9.35 8.69 6.27 9.63c-.5.15-1.03-.13-1.18-.63-.15-.5.13-1.03.63-1.18 3.54-1.07 9.45-.87 13.18 1.35.45.27.6.85.33 1.3-.27.45-.85.6-1.31.33z"/></svg>
+                                </div>
+                                <div class="setting-text">
+                                    <h3>Spotify Web Player</h3>
+                                    <p>Tắt tiếng & tua nhanh quảng cáo trên open.spotify.com</p>
+                                </div>
+                            </div>
+                            <label class="toggle sm">
+                                <input type="checkbox" id="blockSpotify" checked />
+                                <span class="toggle-track"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- Hỗ trợ -->
@@ -219,6 +241,10 @@
                         <li class="feature-item">
                             <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                             Đồng bộ cài đặt và thống kê giữa các tab
+                        </li>
+                        <li class="feature-item">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                            Chặn quảng cáo Spotify Web Player (tắt tiếng & tua nhanh)
                         </li>
                     </ul>
                 </div>

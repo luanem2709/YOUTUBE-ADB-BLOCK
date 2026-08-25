@@ -5,6 +5,7 @@ const DEFAULT_SETTINGS = {
     blockAntiAdblock: true,
     muteAds: true,
     fastSkip: true,
+    blockSpotify: true,
 };
 
 let dailyGoal = 50;
@@ -24,6 +25,7 @@ const statVideo = $("statVideo");
 const statBanner = $("statBanner");
 const statOverlay = $("statOverlay");
 const statAnti = $("statAnti");
+const statSpotify = $("statSpotify");
 const refreshTabBtn = $("refreshTabBtn");
 const openYoutubeBtn = $("openYoutubeBtn");
 const openOptionsBtn = $("openOptionsBtn");
@@ -41,6 +43,7 @@ const settingInputs = {
     blockAntiAdblock: $("blockAntiAdblock"),
     muteAds: $("muteAds"),
     fastSkip: $("fastSkip"),
+    blockSpotify: $("blockSpotify"),
 };
 
 let toastTimer = null;
@@ -112,11 +115,12 @@ function updateProgress(blocked) {
 }
 
 function updateBreakdown(breakdown) {
-    const b = breakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0 };
+    const b = breakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 };
     statVideo.textContent = formatNumber(b.video || 0);
     statBanner.textContent = formatNumber(b.banner || 0);
     statOverlay.textContent = formatNumber(b.overlay || 0);
     statAnti.textContent = formatNumber(b.antiAdblock || 0);
+    if (statSpotify) statSpotify.textContent = formatNumber(b.spotify || 0);
 }
 
 function updateTabStatus() {
@@ -266,7 +270,7 @@ cancelResetBtn.addEventListener("click", () => resetModal.classList.remove("show
 confirmResetBtn.addEventListener("click", () => {
     chrome.storage.local.set({
         adsBlocked: 0,
-        statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0 },
+        statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 },
         statsHistory: [],
     }, () => {
         if (chrome.storage.session) chrome.storage.session.set({ sessionAds: 0 });

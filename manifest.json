@@ -4,6 +4,7 @@
   "default_locale": "vi",
   "version": "2.0.0",
   "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz0kdyFMqLeexuqSEWs8N+Yivf/RhBiTnyJUcBlfuuIHOLHGDP4hKdwELBamPlJBhm7s5BXExuud04RwxjxxkSdeqmHLrQZPJ6tXC8rX6sL9BMs2/LAxXohiOjGKu0bp85Q0IsRqEshH27XbFIFT3rHpOdnBF2GnP1pgy2pcEdLcWyVJRyU7DWesBYHGLM+IQl/plc0vDx+H1THU8Vn0n8lyNMqgTRuHxyhEIW3zMFwBZ38ZGxpfLyYxNOn89pZmDsMAkO+o15Pd+RZJ3JOnoM7s3jjp89NDUqUltB0GVnr10Q4p+E1zrKZvuFnrHVjVWvdVYYzc776DCg5/Ni2A0NwIDAQAB",
   "icons": {
     "32": "images/icon32.png",
     "48": "images/icon48.png",

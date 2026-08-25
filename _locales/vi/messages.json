@@ -1,10 +1,10 @@
 {
   "extName": {
-    "message": "FUNNYGAME Chặn Quảng Cáo YouTube",
+    "message": "FUNNYGAME Chặn Quảng Cáo YouTube & Spotify",
     "description": "Tên extension"
   },
   "extDescription": {
-    "message": "Chặn quảng cáo YouTube 3 lớp: lọc InnerTube, DNR, DOM. Tiếng Việt, Shorts, Music, whitelist kênh, thống kê chi tiết.",
+    "message": "Chặn quảng cáo YouTube 3 lớp (InnerTube, DNR, DOM) và Spotify Web Player. Tiếng Việt, Shorts, Music, whitelist kênh, thống kê chi tiết.",
     "description": "Mô tả extension"
   }
 }

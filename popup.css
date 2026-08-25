@@ -374,6 +374,12 @@ body {
     border: 1px solid rgba(96, 165, 250, 0.2);
 }
 
+.tab-status.active-platform {
+    color: var(--success);
+    background: var(--success-soft);
+    border-color: rgba(52, 211, 153, 0.28);
+}
+
 .breakdown-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);

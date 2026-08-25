@@ -61,5 +61,50 @@
       "urlFilter": "||youtube.com/api/stats/ads",
       "resourceTypes": ["xmlhttprequest", "ping"]
     }
+  },
+  {
+    "id": 8,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||spclient.wg.spotify.com/ads/",
+      "resourceTypes": ["xmlhttprequest", "media", "image", "script", "ping"]
+    }
+  },
+  {
+    "id": 9,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||spclient.wg.spotify.com/ad-logic/",
+      "resourceTypes": ["xmlhttprequest", "media", "image", "script", "ping"]
+    }
+  },
+  {
+    "id": 10,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||spclient.wg.spotify.com/gabo-receiver-service/",
+      "resourceTypes": ["xmlhttprequest", "ping"]
+    }
+  },
+  {
+    "id": 11,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||pixel.spotify.com",
+      "resourceTypes": ["xmlhttprequest", "image", "ping", "script"]
+    }
+  },
+  {
+    "id": 12,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||adeventtracker.spotify.com",
+      "resourceTypes": ["xmlhttprequest", "image", "ping", "script"]
+    }
   }
 ]

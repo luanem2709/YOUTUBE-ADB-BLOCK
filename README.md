@@ -1,51 +1,52 @@
-# YOUTUBE-ADB-BLOCK v2.0
+# YOUTUBE-ADB-BLOCK v2.1
 
-Extension chặn quảng cáo YouTube — **FUNNYGAME** · **LuanEm2709**
+Extension chặn quảng cáo **YouTube & Spotify** — **FUNNYGAME** · **LuanEm2709**
 
-Giao diện tiếng Việt · Chrome & Firefox (Manifest V3)
+Giao diện tiếng Việt · Chrome (Manifest V3)
 
-Repo: https://github.com/luanem2709/YOUTUBE-ADB-BLOCK
+## Tính năng
 
-## Tính năng v2.0
-
-### Chặn quảng cáo (3 lớp)
+### Chặn quảng cáo YouTube (3 lớp)
 1. **Lọc InnerTube** — gỡ `adPlacements` / `playerAds` trước khi player đọc
-2. **DNR** — chặn request domain quảng cáo (doubleclick, pagead...)
+2. **DNR** — chặn request tới domain quảng cáo (doubleclick, pagead...)
 3. **DOM fallback** — tua nhanh, skip, ẩn banner/overlay
 
-### Nền tảng
 - YouTube thường, **Shorts**, **Music**, mobile web
 - Chống popup **anti-adblock**
 - Whitelist kênh (không chặn trên kênh chỉ định)
 
+### Chặn quảng cáo Spotify Web Player
+- Nhận diện quảng cáo trên `open.spotify.com`
+- **Tắt tiếng & tua nhanh** khi gặp quảng cáo, khôi phục lại sau khi hết
+- Ẩn các thành phần giao diện quảng cáo
+- Chặn domain quảng cáo/telemetry của Spotify qua DNR
+
 ### Giao diện
-- Popup 3 tab (dock menu 2026)
-- Thống kê chi tiết + lịch sử 7 ngày
+- Popup 3 tab (dock menu), tự nhận diện tab đang mở (YouTube / Spotify)
+- Thống kê chi tiết theo loại quảng cáo (Video, Banner, Overlay, Anti-adblock, Spotify)
 - Trang **Cài đặt nâng cao** (export/import JSON)
 
 ## Cài đặt
 
-### Chrome
-1. Clone repo → `chrome://extensions/` → Developer mode → Load unpacked
+### Dành cho người dùng
+Chạy trình cài đặt `FUNNYGAME-CaiDat.exe` — tự phát hiện Chrome và cài extension.
+Extension sẽ **tự động nâng cấp** khi có phiên bản mới.
 
-### Firefox
-1. `about:debugging` → Load Temporary Add-on → chọn `manifest.json`
-
-### Build zip
-```bash
-node scripts/build.js
-```
-File output: `dist/funnygame-adblock-v2.0.0.zip`
+### Dành cho lập trình viên (load unpacked)
+1. Tải mã nguồn về máy
+2. Mở `chrome://extensions/` → bật **Developer mode** → **Load unpacked** → chọn thư mục dự án
 
 ## Cấu trúc
 
 ```
 ├── manifest.json / background.js
-├── content-main.js   # MAIN world: lọc InnerTube, skip, anti-adblock
-├── content.js        # Isolated: observer, whitelist, thống kê
+├── content-main.js     # MAIN world: lọc InnerTube, skip, anti-adblock
+├── content.js          # Isolated: observer, whitelist, thống kê
+├── content-spotify.js  # Chặn quảng cáo Spotify Web Player
 ├── popup.* / options.*
 ├── rules/dnr_rules.json
 ├── _locales/vi/
+├── installer/          # Trình cài đặt Windows (.exe)
 └── PRIVACY.md
 ```
 

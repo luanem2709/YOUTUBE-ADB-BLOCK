@@ -3,6 +3,10 @@ let msgToken = null;
 let adsBlockedCount = 0;
 let debounceTimer = null;
 let whitelistChannels = [];
+let ytLoggedIn = null;
+let currentUserKey = "";
+let currentUser = { id: "guest", name: "Khách", avatar: "" };
+let userDetectTimer = null;
 const DEBOUNCE_DELAY = 50;
 const hiddenElements = new WeakSet();
 
@@ -100,11 +104,21 @@ function initialize() {
         if (event.data?.type === "FG_COUNT" && event.data.token === msgToken) {
             incrementBlockCount(event.data.category || "video");
         }
+
+        if (event.data?.type === "FG_IDENTITY" && event.data.token === msgToken) {
+            ytLoggedIn = !!event.data.loggedIn;
+            if (event.data.userKey) currentUserKey = String(event.data.userKey).slice(0, 48);
+            detectAndStoreUser();
+        }
     });
 
     document.addEventListener("yt-navigate-finish", () => {
+        detectAndStoreUser();
         if (isEnabled) handleAds();
     });
+
+    detectAndStoreUser();
+    setInterval(detectAndStoreUser, 10000);
 }
 
 function startWhenReady() {
@@ -240,11 +254,103 @@ function todayKey() {
     return new Date().toISOString().slice(0, 10);
 }
 
+function safeAvatar(src) {
+    if (!src) return "";
+    try {
+        const url = new URL(src);
+        const host = url.hostname;
+        const allowed = host.endsWith(".ggpht.com") || host.endsWith(".googleusercontent.com") || host.endsWith(".ytimg.com");
+        if (url.protocol !== "https:" || !allowed) return "";
+        return url.href;
+    } catch {
+        return "";
+    }
+}
+
+function userIdFromAvatar(src) {
+    try {
+        const url = new URL(src);
+        const key = url.pathname.replace(/^\//, "").split("=")[0].slice(-28);
+        return key ? "yt_" + key : "yt_user";
+    } catch {
+        return "yt_user";
+    }
+}
+
+function detectYoutubeUser() {
+    const avatarImg = document.querySelector(
+        "#avatar-btn img, ytd-masthead #avatar img, ytm-mobile-topbar-renderer img.mobile-topbar-header-avatar"
+    );
+    const signedIn = ytLoggedIn === true || !!avatarImg;
+
+    if (!signedIn) {
+        return { id: "guest", name: "Khách", avatar: "" };
+    }
+
+    const src = safeAvatar(avatarImg?.src || "");
+    const accountName = (
+        document.querySelector("ytd-active-account-header-renderer #account-name")?.textContent ||
+        document.querySelector("#channel-handle")?.textContent ||
+        ""
+    ).trim();
+    const aria = document.querySelector("#avatar-btn")?.getAttribute("aria-label") || "";
+    let name = accountName;
+    if (!name && aria && !/account menu|menu tài khoản|tài khoản/i.test(aria)) {
+        name = aria.replace(/^Account:\s*/i, "").trim();
+    }
+
+    const id = currentUserKey
+        ? "yt_" + currentUserKey.replace(/[^\w-]/g, "").slice(0, 32)
+        : (src ? userIdFromAvatar(src) : "yt_user");
+
+    return {
+        id: id || "yt_user",
+        name: name || "Người dùng YouTube",
+        avatar: src,
+    };
+}
+
+function makeUserRecord(info) {
+    return {
+        id: info.id,
+        name: info.name,
+        avatar: info.avatar || "",
+        adsBlocked: 0,
+        lastActive: Date.now(),
+        firstSeen: Date.now(),
+        days: [todayKey()],
+    };
+}
+
+function detectAndStoreUser() {
+    const info = detectYoutubeUser();
+    const changed = info.id !== currentUser.id || info.name !== currentUser.name || info.avatar !== currentUser.avatar;
+    currentUser = info;
+    if (!changed) return;
+
+    clearTimeout(userDetectTimer);
+    userDetectTimer = setTimeout(() => {
+        chrome.storage.local.get(["userStats"], (result) => {
+            const userStats = result.userStats || { currentId: "guest", users: {} };
+            userStats.currentId = info.id;
+            if (!userStats.users[info.id]) {
+                userStats.users[info.id] = makeUserRecord(info);
+            } else {
+                if (info.name && info.name !== "Người dùng YouTube") {
+                    userStats.users[info.id].name = info.name;
+                }
+                if (info.avatar) userStats.users[info.id].avatar = info.avatar;
+            }
+            chrome.storage.local.set({ userStats });
+        });
+    }, 400);
+}
+
 function flushStats() {
     const delta = pendingBreakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0 };
     pendingBreakdown = null;
 
-    chrome.storage.local.get(["statsBreakdown", "statsHistory"], (result) => {
+    chrome.storage.local.get(["statsBreakdown", "statsHistory", "userStats"], (result) => {
         const breakdown = { ...(result.statsBreakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0 }) };
         for (const [key, val] of Object.entries(delta)) {
             if (breakdown[key] !== undefined) breakdown[key] += val;
@@ -257,10 +363,23 @@ function flushStats() {
         if (entry) entry.count += totalDelta;
         else history.push({ date: key, count: totalDelta });
 
+        const userStats = result.userStats || { currentId: currentUser.id, users: {} };
+        const uid = userStats.currentId || currentUser.id || "guest";
+        if (!userStats.users[uid]) {
+            userStats.users[uid] = makeUserRecord({ ...currentUser, id: uid });
+        }
+        const user = userStats.users[uid];
+        user.adsBlocked = (user.adsBlocked || 0) + totalDelta;
+        user.lastActive = Date.now();
+        if (!Array.isArray(user.days)) user.days = [];
+        if (!user.days.includes(key)) user.days.push(key);
+        user.days = user.days.slice(-365);
+
         chrome.storage.local.set({
             adsBlocked: adsBlockedCount,
             statsBreakdown: breakdown,
             statsHistory: history.slice(-7),
+            userStats,
         });
     });
 }

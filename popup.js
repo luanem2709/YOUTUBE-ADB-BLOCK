@@ -28,6 +28,7 @@ const statSpotify = $("statSpotify");
 const refreshTabBtn = $("refreshTabBtn");
 const openYoutubeBtn = $("openYoutubeBtn");
 const openOptionsBtn = $("openOptionsBtn");
+const openStatsBtn = $("openStatsBtn");
 const resetStatsBtn = $("resetStatsBtn");
 const resetModal = $("resetModal");
 const cancelResetBtn = $("cancelResetBtn");
@@ -199,6 +200,22 @@ function initPopup() {
     }
 
     updateTabStatus();
+    touchCurrentUser();
+}
+
+function touchCurrentUser() {
+    chrome.storage.local.get(["userStats"], (result) => {
+        const userStats = result.userStats;
+        if (!userStats?.users) return;
+        const id = userStats.currentId;
+        const user = userStats.users[id];
+        if (!user) return;
+        user.lastActive = Date.now();
+        const today = new Date().toISOString().slice(0, 10);
+        if (!Array.isArray(user.days)) user.days = [];
+        if (!user.days.includes(today)) user.days.push(today);
+        chrome.storage.local.set({ userStats });
+    });
 }
 
 function updateTimeSaved(blockedCount) {
@@ -268,23 +285,35 @@ openOptionsBtn.addEventListener("click", () => {
     chrome.runtime.openOptionsPage();
 });
 
+openStatsBtn.addEventListener("click", () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("stats.html") });
+});
+
 resetStatsBtn.addEventListener("click", () => resetModal.classList.add("show"));
 cancelResetBtn.addEventListener("click", () => resetModal.classList.remove("show"));
 
 confirmResetBtn.addEventListener("click", () => {
-    chrome.storage.local.set({
-        adsBlocked: 0,
-        statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 },
-        statsHistory: [],
-    }, () => {
-        if (chrome.storage.session) chrome.storage.session.set({ sessionAds: 0 });
-        adsBlockedCount.textContent = "0";
-        sessionCount.textContent = "0";
-        timeSavedCount.textContent = "0 giây";
-        updateProgress(0);
-        updateBreakdown({});
-        resetModal.classList.remove("show");
-        showToast("Đã đặt lại thống kê");
+    chrome.storage.local.get(["userStats"], (res) => {
+        const userStats = res.userStats || { currentId: "guest", users: {} };
+        Object.values(userStats.users || {}).forEach((user) => {
+            user.adsBlocked = 0;
+            user.days = [];
+        });
+        chrome.storage.local.set({
+            adsBlocked: 0,
+            statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 },
+            statsHistory: [],
+            userStats,
+        }, () => {
+            if (chrome.storage.session) chrome.storage.session.set({ sessionAds: 0 });
+            adsBlockedCount.textContent = "0";
+            sessionCount.textContent = "0";
+            timeSavedCount.textContent = "0 giây";
+            updateProgress(0);
+            updateBreakdown({});
+            resetModal.classList.remove("show");
+            showToast("Đã đặt lại thống kê");
+        });
     });
 });
 

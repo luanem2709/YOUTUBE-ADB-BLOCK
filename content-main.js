@@ -34,6 +34,20 @@
         window.postMessage({ type: "FG_COUNT", category, token: FG_TOKEN }, "*");
     }
 
+    function postIdentity() {
+        let loggedIn = false;
+        let userKey = "";
+        try {
+            if (window.ytcfg && typeof window.ytcfg.get === "function") {
+                loggedIn = !!window.ytcfg.get("LOGGED_IN");
+                userKey = window.ytcfg.get("DELEGATED_SESSION_ID") || "";
+            }
+        } catch {
+            /* ignore */
+        }
+        window.postMessage({ type: "FG_IDENTITY", token: FG_TOKEN, loggedIn, userKey }, "*");
+    }
+
     function stripAdsDeep(value) {
         if (!value || typeof value !== "object") return value;
 
@@ -315,5 +329,7 @@
 
     window.postMessage({ type: "FG_TOKEN_READY", token: FG_TOKEN }, "*");
 
+    postIdentity();
+    setInterval(postIdentity, 5000);
     setInterval(removeAntiAdblock, 3000);
 })();

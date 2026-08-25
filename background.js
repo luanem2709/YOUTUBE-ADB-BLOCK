@@ -3,7 +3,7 @@ const DEFAULTS = {
     adsBlocked: 0,
     dailyGoal: 50,
     whitelistChannels: [],
-    statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0 },
+    statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 },
     statsHistory: [],
     settings: {
         blockVideo: true,
@@ -12,6 +12,7 @@ const DEFAULTS = {
         blockAntiAdblock: true,
         muteAds: true,
         fastSkip: true,
+        blockSpotify: true,
     },
 };
 

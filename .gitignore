@@ -11,9 +11,17 @@ dist/
 node_modules/
 agent-transcripts/
 agent-tools/
+scripts/.github-setup-work/
 installer/bin/
 installer/obj/
 installer/publish/
 installer/publish-*/
 *.user
 *.suo
+scripts/.gh-token
+*.token
+.gh-token
+build/
+*.pem
+key.pem
+_metadata/

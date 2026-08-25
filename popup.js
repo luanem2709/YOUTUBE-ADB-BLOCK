@@ -126,10 +126,17 @@ function updateBreakdown(breakdown) {
 function updateTabStatus() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const url = tabs?.[0]?.url || "";
-        if (!url.includes("youtube.com")) {
-            tabStatus.textContent = "Tab hiện tại: không phải YouTube";
+        if (url.includes("open.spotify.com")) {
+            tabStatus.textContent = "Tab hiện tại: Spotify Web Player";
+            tabStatus.classList.add("active-platform");
             return;
         }
+        if (!url.includes("youtube.com")) {
+            tabStatus.textContent = "Tab hiện tại: không phải YouTube/Spotify";
+            tabStatus.classList.remove("active-platform");
+            return;
+        }
+        tabStatus.classList.add("active-platform");
         if (url.includes("/shorts/")) tabStatus.textContent = "Tab hiện tại: YouTube Shorts";
         else if (url.includes("music.youtube.com")) tabStatus.textContent = "Tab hiện tại: YouTube Music";
         else if (url.includes("/watch")) tabStatus.textContent = "Tab hiện tại: đang xem video";
@@ -142,11 +149,11 @@ function updateMasterUI(isEnabled) {
     if (isEnabled) {
         headerStatus.textContent = "Đang bảo vệ";
         headerStatus.classList.remove("off");
-        masterDesc.textContent = "Đang chặn quảng cáo trên mọi tab YouTube";
+        masterDesc.textContent = "Đang chặn quảng cáo trên YouTube & Spotify";
     } else {
         headerStatus.textContent = "Đã tắt";
         headerStatus.classList.add("off");
-        masterDesc.textContent = "Quảng cáo sẽ hiển thị bình thường trên YouTube";
+        masterDesc.textContent = "Quảng cáo sẽ hiển thị bình thường";
     }
     Object.values(settingInputs).forEach((input) => {
         if (input) input.disabled = !isEnabled;
@@ -205,7 +212,7 @@ enableToggle.addEventListener("change", () => {
     const isEnabled = enableToggle.checked;
     chrome.storage.local.set({ enabled: isEnabled });
     updateMasterUI(isEnabled);
-    showToast(isEnabled ? "Đã bật bảo vệ YouTube" : "Đã tắt chặn quảng cáo");
+    showToast(isEnabled ? "Đã bật bảo vệ YouTube & Spotify" : "Đã tắt chặn quảng cáo");
 });
 
 Object.keys(settingInputs).forEach((key) => {

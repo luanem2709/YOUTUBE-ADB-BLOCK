@@ -8,9 +8,9 @@
     <AssemblyName>FUNNYGAME-CaiDat</AssemblyName>
     <RootNamespace>FunnyGameInstaller</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.0.0</Version>
+    <Version>1.6.1</Version>
     <Product>FUNNY GAME</Product>
-    <Description>Tải extension từ GitHub và gắn vào Chrome chỉ định</Description>
+    <Description>Cài đặt chặn quảng cáo YouTube và Spotify cho Chrome</Description>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>

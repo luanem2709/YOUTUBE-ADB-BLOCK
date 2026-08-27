@@ -120,11 +120,59 @@ body {
     font-weight: 500;
 }
 
-.header-badges {
-    display: flex;
-    gap: 6px;
-    margin-top: 8px;
-    flex-wrap: wrap;
+.header-expiry {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--success);
+    font-weight: 600;
+}
+
+.shell.locked .content,
+.shell.locked .dock-nav,
+.shell.locked .footer,
+.shell.locked .header-expiry {
+    display: none;
+}
+
+.license-gate {
+    display: none;
+    padding: 0 16px 20px;
+}
+
+.shell.locked .license-gate {
+    display: block;
+}
+
+.license-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 12px;
+}
+
+.license-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    font-size: 13px;
+    letter-spacing: 0.6px;
+    outline: none;
+    margin-bottom: 8px;
+}
+
+.license-input:focus {
+    border-color: var(--border-active);
+}
+
+.license-error {
+    min-height: 16px;
+    font-size: 11px;
+    color: var(--danger);
+    margin-bottom: 10px;
 }
 
 .badge {

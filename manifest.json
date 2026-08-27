@@ -2,7 +2,7 @@
   "name": "__MSG_extName__",
   "description": "__MSG_extDescription__",
   "default_locale": "vi",
-  "version": "2.1.5",
+  "version": "2.1.7",
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz0kdyFMqLeexuqSEWs8N+Yivf/RhBiTnyJUcBlfuuIHOLHGDP4hKdwELBamPlJBhm7s5BXExuud04RwxjxxkSdeqmHLrQZPJ6tXC8rX6sL9BMs2/LAxXohiOjGKu0bp85Q0IsRqEshH27XbFIFT3rHpOdnBF2GnP1pgy2pcEdLcWyVJRyU7DWesBYHGLM+IQl/plc0vDx+H1THU8Vn0n8lyNMqgTRuHxyhEIW3zMFwBZ38ZGxpfLyYxNOn89pZmDsMAkO+o15Pd+RZJ3JOnoM7s3jjp89NDUqUltB0GVnr10Q4p+E1zrKZvuFnrHVjVWvdVYYzc776DCg5/Ni2A0NwIDAQAB",
   "icons": {
@@ -26,14 +26,18 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["storage", "activeTab", "declarativeNetRequest"],
+  "permissions": ["storage", "activeTab", "declarativeNetRequest", "alarms"],
   "host_permissions": [
     "*://*.youtube.com/*",
     "*://*.googlevideo.com/*",
     "*://*.doubleclick.net/*",
     "*://*.googlesyndication.com/*",
     "*://*.googleadservices.com/*",
-    "*://*.spotify.com/*"
+    "*://*.spotify.com/*",
+    "*://*.scdn.co/*",
+    "*://*.spotifycdn.com/*",
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*"
   ],
   "declarative_net_request": {
     "rule_resources": [
@@ -66,9 +70,17 @@
       "run_at": "document_start"
     },
     {
-      "matches": ["*://open.spotify.com/*"],
+      "matches": ["*://open.spotify.com/*", "*://play.spotify.com/*"],
+      "js": ["content-spotify-main.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["*://open.spotify.com/*", "*://play.spotify.com/*"],
       "js": ["content-spotify.js"],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
   "browser_specific_settings": {

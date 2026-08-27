@@ -174,6 +174,59 @@ function getSettingsFromUI() {
     return settings;
 }
 
+const licenseGate = $("licenseGate");
+const licenseKey = $("licenseKey");
+const licenseBtn = $("licenseBtn");
+const licenseError = $("licenseError");
+const licenseHint = $("licenseHint");
+const headerExpiry = $("headerExpiry");
+const appShell = $("appShell");
+
+function setLicenseLocked(locked, expiryLabel) {
+    appShell.classList.toggle("locked", locked);
+    if (headerExpiry) {
+        headerExpiry.textContent = locked ? "" : (expiryLabel || "");
+        headerExpiry.style.display = locked || !expiryLabel ? "none" : "block";
+    }
+    if (!locked && headerStatus) {
+        headerStatus.textContent = "Đang bảo vệ";
+        headerStatus.classList.remove("off");
+    }
+    if (locked && headerStatus) {
+        headerStatus.textContent = "Chưa kích hoạt";
+        headerStatus.classList.add("off");
+    }
+}
+
+async function applyLicenseGate() {
+    const state = await FunnyLicense.load();
+    setLicenseLocked(!state.ok, state.label);
+    chrome.runtime.sendMessage({ type: "LICENSE_SYNC" });
+    if (state.ok) initPopup();
+}
+
+async function submitLicense() {
+    licenseError.textContent = "";
+    licenseBtn.disabled = true;
+    licenseBtn.textContent = "Đang kiểm tra...";
+    const result = await FunnyLicense.activate(licenseKey.value);
+    licenseBtn.disabled = false;
+    licenseBtn.textContent = "Kích hoạt";
+    if (!result.ok) {
+        licenseError.textContent = result.message || "Key authentic không đúng.";
+        return;
+    }
+    chrome.runtime.sendMessage({ type: "LICENSE_SYNC" });
+    setLicenseLocked(false, result.label);
+    showToast("Đã kích hoạt. Chặn quảng cáo đã bật.");
+    initPopup();
+}
+
+licenseBtn.addEventListener("click", () => submitLicense());
+licenseKey.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitLicense();
+});
+
 function initPopup() {
     chrome.storage.local.get(
         ["enabled", "adsBlocked", "settings", "dailyGoal", "statsBreakdown"],
@@ -257,8 +310,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
             enableToggle.checked = changes.enabled.newValue;
             updateMasterUI(changes.enabled.newValue);
         }
-        if (changes.settings) {
-            applySettingsToUI({ ...DEFAULT_SETTINGS, ...changes.settings.newValue });
+        if (changes.licenseValid || changes.licenseExpires) {
+            FunnyLicense.load().then((state) => {
+                setLicenseLocked(!state.ok, state.label);
+            });
         }
     }
     if (area === "session" && changes.sessionAds) {
@@ -324,4 +379,4 @@ resetModal.addEventListener("click", (e) => {
 versionBadge.textContent = "v" + chrome.runtime.getManifest().version;
 
 initTabs();
-initPopup();
+applyLicenseGate();

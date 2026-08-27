@@ -1,0 +1,6 @@
+Key,Status,Days,Created,Expires,User,HWID,Note,Last Check,Used Count
+FG-MAIN-2709-LUAN,Active,3650,2026-08-25,2036-08-22,,,master,,0
+FG-TEST-2709-AUTH,Active,365,2026-08-25,2027-08-25,,,test,,0
+FG-USER-0001-KEYA,Active,365,2026-08-25,2027-08-25,,,user 1,,0
+FG-USER-0002-KEYB,Active,365,2026-08-25,2027-08-25,,,user 2,,0
+FG-USER-0003-KEYC,Active,365,2026-08-25,2027-08-25,,,user 3,,0

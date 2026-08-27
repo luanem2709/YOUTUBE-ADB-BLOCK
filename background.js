@@ -1,5 +1,10 @@
+importScripts("license.js");
+
 const DEFAULTS = {
     enabled: true,
+    licenseValid: false,
+    licenseExpires: "",
+    licenseKey: "",
     adsBlocked: 0,
     dailyGoal: 50,
     whitelistChannels: [],
@@ -48,5 +53,47 @@ chrome.runtime.onInstalled.addListener(() => {
         if (!existing.whitelistChannels) merged.whitelistChannels = [];
         if (!existing.dailyGoal) merged.dailyGoal = DEFAULTS.dailyGoal;
         chrome.storage.local.set(merged);
+        applyLicenseRules();
     });
 });
+
+chrome.runtime.onStartup.addListener(() => {
+    applyLicenseRules();
+    FunnyLicense.recheck().then(() => applyLicenseRules());
+});
+
+chrome.alarms.create("funny-license", { periodInMinutes: 30 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== "funny-license") return;
+    FunnyLicense.recheck().then(() => applyLicenseRules());
+});
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === "LICENSE_SYNC") {
+        applyLicenseRules().then(() => sendResponse({ ok: true }));
+        return true;
+    }
+    return false;
+});
+
+async function applyLicenseRules() {
+    const state = await FunnyLicense.load();
+    if (!state.ok) {
+        await chrome.storage.local.set({ licenseValid: false });
+    }
+    try {
+        if (state.ok) {
+            await chrome.declarativeNetRequest.updateEnabledRulesets({
+                enableRulesetIds: ["ad_rules"],
+            });
+        } else {
+            await chrome.declarativeNetRequest.updateEnabledRulesets({
+                disableRulesetIds: ["ad_rules"],
+            });
+        }
+    } catch {
+        /* ruleset co the chua san sang */
+    }
+}
+
+applyLicenseRules();

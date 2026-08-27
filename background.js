@@ -68,13 +68,34 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     FunnyLicense.recheck().then(() => applyLicenseRules());
 });
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+const mutedByUs = new Set();
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg?.type === "LICENSE_SYNC") {
         applyLicenseRules().then(() => sendResponse({ ok: true }));
         return true;
     }
+    if (msg?.type === "FG_MUTE_TAB") {
+        const tabId = sender.tab?.id;
+        if (tabId == null) {
+            sendResponse({ ok: false });
+            return false;
+        }
+        if (msg.muted) {
+            chrome.tabs.update(tabId, { muted: true }, () => sendResponse({ ok: true }));
+            mutedByUs.add(tabId);
+        } else if (mutedByUs.has(tabId)) {
+            chrome.tabs.update(tabId, { muted: false }, () => sendResponse({ ok: true }));
+            mutedByUs.delete(tabId);
+        } else {
+            sendResponse({ ok: true });
+        }
+        return true;
+    }
     return false;
 });
+
+chrome.tabs.onRemoved.addListener((tabId) => mutedByUs.delete(tabId));
 
 async function applyLicenseRules() {
     const state = await FunnyLicense.load();

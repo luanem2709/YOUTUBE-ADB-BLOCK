@@ -9,7 +9,7 @@
 </head>
 
 <body>
-    <div class="shell">
+    <div class="shell locked" id="appShell">
         <header class="header">
             <div class="logo-wrap">
                 <img src="./images/logo.gif" alt="Logo FUNNYGAME" />
@@ -20,10 +20,21 @@
                     <span class="badge badge-version" id="versionBadge">v1.3</span>
                     <span class="badge badge-status" id="headerStatus">Đang bảo vệ</span>
                 </div>
+                <p class="header-expiry" id="headerExpiry"></p>
             </div>
         </header>
 
-        <main class="content">
+        <section class="license-gate" id="licenseGate">
+            <div class="card">
+                <div class="card-title">Key authentic</div>
+                <p class="license-hint" id="licenseHint">Nhập key để bật chặn quảng cáo YouTube &amp; Spotify.</p>
+                <input class="license-input" id="licenseKey" type="text" placeholder="FG-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" />
+                <p class="license-error" id="licenseError"></p>
+                <button class="btn btn-primary full" id="licenseBtn" type="button">Kích hoạt</button>
+            </div>
+        </section>
+
+        <main class="content" id="appMain">
             <!-- Tổng quan -->
             <section class="tab-panel active" id="panel-overview" role="tabpanel">
                 <div class="card">
@@ -262,7 +273,7 @@
             <p>Phát triển bởi <strong>LuanEm2709</strong></p>
         </footer>
 
-        <nav class="dock-nav" role="tablist" aria-label="Menu chính">
+        <nav class="dock-nav" id="appDock" role="tablist" aria-label="Menu chính">
             <div class="dock-indicator" id="dockIndicator"></div>
             <button class="dock-item active" data-tab="overview" type="button" role="tab" aria-selected="true">
                 <span class="dock-icon">
@@ -298,6 +309,7 @@
         </div>
     </div>
 
+    <script src="license.js"></script>
     <script src="popup.js"></script>
 </body>
 

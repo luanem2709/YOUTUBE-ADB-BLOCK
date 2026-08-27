@@ -1,5 +1,5 @@
-// FUNNYGAME — chan quang cao cho Spotify Web Player (open.spotify.com)
-// Luu y: chi tac dong duoc tren trinh duyet, khong anh huong app Spotify desktop/mobile.
+// FUNNYGAME — chặn quảng cáo Spotify Web Player (open.spotify.com)
+// Chỉ chạy trên trình duyệt, không ảnh hưởng app Spotify desktop/mobile.
 (function () {
     let isEnabled = false;
     let blockSpotify = true;
@@ -10,12 +10,29 @@
         "werbung", "annuncio", "reklam", "реклама", "광고", "広告",
     ];
 
+    // Cụm chữ của màn QC (ảnh: "Nhạc của bạn sẽ tiếp tục sau quảng cáo")
+    const AD_BREAK_PHRASES = [
+        "nhạc của bạn sẽ tiếp tục",
+        "nhac cua ban se tiep tuc",
+        "your music will continue after",
+        "giây quảng cáo",
+        "giay quang cao",
+        "seconds of ads",
+        "seconds of ad remaining",
+        "quảng cáo •",
+        "quảng cáo ·",
+        "advertisement •",
+        "advertisement ·",
+        "advertisement • ",
+    ];
+
     const AD_UI_SELECTORS = [
         '[data-testid="ad-slot-container"]',
         '[data-testid="ad-container"]',
         '[data-testid="advertisement"]',
         '[data-testid="ad-tag"]',
         '[data-testid="video-ad"]',
+        '[data-testid="VideoPlayerAd"]',
         '[aria-label="Advertisement"]',
         '[aria-label="Quảng cáo"]',
         "div[data-ad-slot]",
@@ -29,15 +46,30 @@
         'button[aria-label*="Skip ad" i]',
         'button[aria-label*="Skip advert" i]',
         'button[aria-label*="Bỏ qua quảng cáo" i]',
+        'button[aria-label*="Skip" i][aria-label*="ad" i]',
     ];
 
     let mutedByUs = false;
     let ratedByUs = false;
+    let tabMutedByUs = false;
     let lastSkipAt = 0;
+    let skippedForwardThisAd = false;
     let adActive = false;
 
     function postLicense() {
         try { window.postMessage({ type: "FG_SPOTIFY_LICENSE", ok: isEnabled && blockSpotify }, "*"); }
+        catch { /* ignore */ }
+    }
+
+    function postAdState(on) {
+        try { window.postMessage({ type: "FG_SPOTIFY_AD", ok: on }, "*"); }
+        catch { /* ignore */ }
+    }
+
+    function setTabMuted(on) {
+        if (on === tabMutedByUs) return;
+        tabMutedByUs = on;
+        try { chrome.runtime.sendMessage({ type: "FG_MUTE_TAB", muted: on }); }
         catch { /* ignore */ }
     }
 
@@ -66,6 +98,10 @@
                 blockSpotify = result.settings?.blockSpotify !== false;
                 adsBlockedCount = 0;
                 postLicense();
+                if (!isEnabled || !blockSpotify) {
+                    postAdState(false);
+                    setTabMuted(false);
+                }
                 cb && cb();
             });
         } catch {
@@ -104,6 +140,7 @@
         const text = (widget.innerText || "").toLowerCase();
         const blob = label + " " + text;
         if (AD_LABELS.some((k) => blob.includes(k))) return true;
+        if (AD_BREAK_PHRASES.some((k) => blob.includes(k))) return true;
 
         const trackLink = widget.querySelector(
             'a[href*="/track/"], a[href*="/album/"], a[href*="/playlist/"], a[href*="/artist/"], a[href*="/episode/"], [data-testid="context-item-link"]'
@@ -113,8 +150,31 @@
         return false;
     }
 
+    function pageHasAdBreak() {
+        const bar = document.querySelector('[data-testid="now-playing-bar"]');
+        const main = document.querySelector('[data-testid="main"]') || document.querySelector("#main") || document.body;
+        const text = ((bar && bar.innerText) || "") + "\n" + ((main && main.innerText) || "");
+        const blob = text.toLowerCase();
+        if (AD_BREAK_PHRASES.some((k) => blob.includes(k))) return true;
+        if (document.querySelector(AD_UI_SELECTORS.join(","))) return true;
+        return false;
+    }
+
+    function mediaSessionLooksLikeAd() {
+        try {
+            const meta = navigator.mediaSession && navigator.mediaSession.metadata;
+            if (!meta) return false;
+            const blob = `${meta.title || ""} ${meta.artist || ""} ${meta.album || ""}`.toLowerCase();
+            return AD_LABELS.some((k) => blob.includes(k));
+        } catch {
+            return false;
+        }
+    }
+
     function isAdPlaying() {
         if (document.querySelector(SKIP_AD_SELECTORS.join(","))) return true;
+        if (pageHasAdBreak()) return true;
+        if (mediaSessionLooksLikeAd()) return true;
 
         const widget = document.querySelector('[data-testid="now-playing-widget"]');
         if (widget && widgetLooksLikeAd(widget)) return true;
@@ -125,7 +185,7 @@
         const link = document.querySelector('a[data-testid="context-item-link"]');
         if (link) {
             const href = (link.getAttribute("href") || "").toLowerCase();
-            if (href.includes("/ad") || href.includes("advertis") || href.includes("spotify:ad:")) return true;
+            if (href.includes("spotify:ad:") || href.includes("/ad/") || href.includes("advertis")) return true;
         }
         return false;
     }
@@ -136,7 +196,7 @@
 
     function trySkipAd() {
         const now = Date.now();
-        if (now - lastSkipAt < 1800) return false;
+        if (now - lastSkipAt < 1200) return false;
         for (const selector of SKIP_AD_SELECTORS) {
             const btn = document.querySelector(selector);
             if (btn && btn.offsetParent !== null) {
@@ -145,9 +205,16 @@
                 return true;
             }
         }
+        if (skippedForwardThisAd) return false;
         const next = document.querySelector('[data-testid="control-button-skip-forward"]');
-        if (next && !next.disabled && next.offsetParent !== null) {
+        if (next && next.offsetParent !== null) {
             lastSkipAt = now;
+            skippedForwardThisAd = true;
+            try {
+                next.disabled = false;
+                next.removeAttribute("disabled");
+                next.removeAttribute("aria-disabled");
+            } catch { /* ignore */ }
             next.click();
             return true;
         }
@@ -155,6 +222,8 @@
     }
 
     function handleAd() {
+        postAdState(true);
+        setTabMuted(true);
         trySkipAd();
         const media = mediaElements();
         for (const m of media) {
@@ -164,12 +233,15 @@
                 if (isFinite(m.duration) && m.duration > 0 && m.currentTime < m.duration - 0.2) {
                     m.currentTime = m.duration;
                 }
-            } catch { /* seek co the bi chan */ }
+            } catch { /* seek có thể bị chặn */ }
         }
         hideAdUI();
     }
 
     function restorePlayback() {
+        skippedForwardThisAd = false;
+        postAdState(false);
+        setTabMuted(false);
         for (const m of mediaElements()) {
             if (ratedByUs && m.playbackRate === 16) m.playbackRate = 1;
             if (mutedByUs && m.muted) m.muted = false;
@@ -263,10 +335,19 @@
     function start() {
         watchSettings();
         postLicense();
-        setInterval(tick, 500);
+        setInterval(tick, 200);
         const observer = new MutationObserver(() => tick());
         const root = document.querySelector('[data-testid="now-playing-bar"]') || document.body;
-        observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-label", "href"] });
+        observer.observe(root, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ["aria-label", "href", "title"],
+        });
+        if (root !== document.body) {
+            observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+        }
     }
 
     loadSettings(start);

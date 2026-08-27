@@ -160,5 +160,32 @@
       "urlFilter": "||adclick.g.doubleclick.net",
       "resourceTypes": ["xmlhttprequest", "image", "sub_frame", "script", "ping"]
     }
+  },
+  {
+    "id": 19,
+    "priority": 3,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||spotify.com/ads-event/",
+      "resourceTypes": ["xmlhttprequest", "ping", "other"]
+    }
+  },
+  {
+    "id": 20,
+    "priority": 3,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||spotify.com/sponsoredplaylist/",
+      "resourceTypes": ["xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 21,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||audio-fa.spotifycdn.com",
+      "resourceTypes": ["media", "xmlhttprequest", "other"]
+    }
   }
 ]

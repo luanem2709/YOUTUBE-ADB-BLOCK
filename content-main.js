@@ -68,10 +68,13 @@
             (text.includes("adPlacements") || text.includes("playerAds") || text.includes("adSlots"));
     }
 
+    let allowLicense = false;
+
     function hookJsonParse() {
         const original = JSON.parse;
         JSON.parse = function (text, reviver) {
             const parsed = original.call(this, text, reviver);
+            if (!allowLicense) return parsed;
             if (shouldSanitize(text)) {
                 return stripAdsDeep(parsed);
             }
@@ -277,7 +280,7 @@
             player.classList.contains("ad-interrupting")
         );
 
-        if (!isAd) return;
+        if (!isAd || !allowLicense) return;
 
         if (video.playbackRate !== 16) video.playbackRate = 16;
         video.muted = true;
@@ -287,7 +290,13 @@
     }, true);
 
     window.addEventListener("message", (event) => {
-        if (event.source !== window || !isValidToken(event.data)) return;
+        if (event.source !== window) return;
+        if (event.data?.type === "FG_LICENSE") {
+            allowLicense = !!event.data.ok;
+            return;
+        }
+        if (!isValidToken(event.data)) return;
+        if (!allowLicense) return;
         const msg = event.data;
 
         if (msg.type === "FG_SKIP") {

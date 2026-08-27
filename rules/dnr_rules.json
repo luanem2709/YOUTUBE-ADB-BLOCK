@@ -106,5 +106,59 @@
       "urlFilter": "||adeventtracker.spotify.com",
       "resourceTypes": ["xmlhttprequest", "image", "ping", "script"]
     }
+  },
+  {
+    "id": 13,
+    "priority": 3,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||spotify.com/ads/",
+      "resourceTypes": ["xmlhttprequest", "media", "image", "script", "ping", "other"]
+    }
+  },
+  {
+    "id": 14,
+    "priority": 3,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||spotify.com/ad-logic/",
+      "resourceTypes": ["xmlhttprequest", "media", "image", "script", "ping", "other"]
+    }
+  },
+  {
+    "id": 15,
+    "priority": 3,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||spotify.com/gabo-receiver-service/",
+      "resourceTypes": ["xmlhttprequest", "ping", "other"]
+    }
+  },
+  {
+    "id": 16,
+    "priority": 3,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "/audio/advertisement",
+      "resourceTypes": ["media", "xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 17,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||audio-fa.scdn.co",
+      "resourceTypes": ["media", "xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 18,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||adclick.g.doubleclick.net",
+      "resourceTypes": ["xmlhttprequest", "image", "sub_frame", "script", "ping"]
+    }
   }
 ]

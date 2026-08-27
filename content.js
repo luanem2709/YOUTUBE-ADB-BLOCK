@@ -1,4 +1,4 @@
-let isEnabled = true;
+let isEnabled = false;
 let msgToken = null;
 let adsBlockedCount = 0;
 let debounceTimer = null;
@@ -19,7 +19,32 @@ const DEFAULT_SETTINGS = {
     fastSkip: true,
 };
 
+function licenseAllows(result) {
+    if (result.licenseValid !== true) return false;
+    const raw = result.licenseExpires;
+    if (!raw) return false;
+    const text = String(raw).trim();
+    let day = null;
+    let m = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    else {
+        m = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+        if (m) day = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    }
+    if (!day || Number.isNaN(day.getTime())) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return day >= today;
+}
+
 let settings = { ...DEFAULT_SETTINGS };
+
+function applyEnabled(enabledFlag, licensed) {
+    isEnabled = !!enabledFlag && !!licensed;
+    window.postMessage({ type: "FG_LICENSE", ok: isEnabled }, "*");
+    if (isEnabled) startWhenReady();
+    else if (typeof stopObserver === "function") stopObserver();
+}
 
 const SKIP_SELECTORS = [
     "button.ytp-ad-skip-button-modern.ytp-button",
@@ -62,26 +87,24 @@ function postToMain(type, extra = {}) {
 
 function initialize() {
     chrome.storage.local.get(
-        ["enabled", "adsBlocked", "settings", "whitelistChannels"],
+        ["enabled", "adsBlocked", "settings", "whitelistChannels", "licenseValid", "licenseExpires"],
         (result) => {
-            isEnabled = result.enabled !== undefined ? result.enabled : true;
             adsBlockedCount = result.adsBlocked || 0;
             settings = { ...DEFAULT_SETTINGS, ...(result.settings || {}) };
             whitelistChannels = result.whitelistChannels || [];
-
-            if (isEnabled) {
-                startWhenReady();
-            }
+            const on = result.enabled !== undefined ? result.enabled : true;
+            applyEnabled(on, licenseAllows(result));
         }
     );
 
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== "local") return;
 
-        if (changes.enabled) {
-            isEnabled = changes.enabled.newValue;
-            if (isEnabled) startWhenReady();
-            else stopObserver();
+        if (changes.enabled || changes.licenseValid || changes.licenseExpires) {
+            chrome.storage.local.get(["enabled", "licenseValid", "licenseExpires"], (r) => {
+                const on = changes.enabled ? changes.enabled.newValue : (r.enabled !== false);
+                applyEnabled(on, licenseAllows(r));
+            });
         }
         if (changes.settings) {
             settings = { ...DEFAULT_SETTINGS, ...changes.settings.newValue };

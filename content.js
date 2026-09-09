@@ -237,10 +237,14 @@ function skipVideoAd() {
 
     const adVideo = document.querySelector("video.html5-main-video");
     if (adVideo) {
-        if (settings.fastSkip) adVideo.playbackRate = 16;
         if (settings.muteAds) adVideo.muted = true;
+        if (settings.fastSkip) adVideo.playbackRate = 16;
         if (settings.fastSkip && adVideo.duration && isFinite(adVideo.duration)) {
             adVideo.currentTime = adVideo.duration;
+            // Đảm bảo video không bị pause sau khi seek tới cuối
+            if (adVideo.paused) {
+                adVideo.play().catch(() => {});
+            }
         }
     }
 

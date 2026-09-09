@@ -186,7 +186,12 @@ let observer = null;
 function startObserver() {
     if (observer) return;
 
-    const targetNode = document.getElementById("movie_player") || document.body;
+    // Dùng movie_player → page-manager → body (theo thứ tự ưu tiên giảm dần)
+    // để tránh observe quá nhiều DOM changes không cần thiết
+    const targetNode =
+        document.getElementById("movie_player") ||
+        document.getElementById("page-manager") ||
+        document.body;
 
     observer = new MutationObserver(() => {
         clearTimeout(debounceTimer);
@@ -233,7 +238,11 @@ function skipVideoAd() {
         ".ytp-ad-skip-ad-slot button, .ytp-ad-survey-player-overlay-skip-or-preview button"
     );
 
-    if (!isAdActive && !hasAdModule && !hasSkipButton && !hasSurveySkip) return;
+    if (!isAdActive && !hasAdModule && !hasSkipButton && !hasSurveySkip) {
+        // Kiểm tra thêm Shorts ads
+        skipShortsAd();
+        return;
+    }
 
     const adVideo = document.querySelector("video.html5-main-video");
     if (adVideo) {
@@ -250,6 +259,31 @@ function skipVideoAd() {
 
     postToMain("FG_SKIP", { selectors: SKIP_SELECTORS });
 }
+
+// Hỗ trợ YouTube Shorts: chặn quảng cáo interstitial trước/trong Shorts
+function skipShortsAd() {
+    // Shorts dùng overlay player riêng
+    const shortsAdOverlay = document.querySelector(
+        "ytd-reel-player-overlay-renderer .ytp-ad-module, " +
+        "ytd-shorts .ytp-ad-module, " +
+        ".reel-player-overlay-renderer .ytp-ad-module"
+    );
+    if (!shortsAdOverlay || shortsAdOverlay.children.length === 0) return;
+
+    const shortsVideo = document.querySelector(
+        "ytd-reel-player-overlay-renderer video, ytd-shorts video"
+    );
+    if (shortsVideo) {
+        if (settings.muteAds) shortsVideo.muted = true;
+        if (settings.fastSkip) shortsVideo.playbackRate = 16;
+        if (settings.fastSkip && shortsVideo.duration && isFinite(shortsVideo.duration)) {
+            shortsVideo.currentTime = shortsVideo.duration;
+            if (shortsVideo.paused) shortsVideo.play().catch(() => {});
+        }
+    }
+    postToMain("FG_SKIP", { selectors: SKIP_SELECTORS });
+}
+
 
 function hideElements(selectors, category) {
     for (const selector of selectors) {

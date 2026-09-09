@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.0] — 2026-09-09
+
+### Thêm
+- Hỗ trợ YouTube Shorts: tự động skip/mute quảng cáo interstitial trong Shorts player
+- Skip retry: thử lại tối đa 3 lần × 200ms khi skip button chưa kịp render
+- DNR rules bổ sung: block `securepubads.g.doubleclick.net`, `imasdk.googleapis.com/ima3.js`, `tpc.googlesyndication.com`, YouTube `log_event` và `watchtime`
+- Service Worker keepalive alarm (mỗi 1 phút) để tránh bị trình duyệt kill giữa chừng
+
+### Sửa
+- Observer scope: dùng `#page-manager` thay vì `document.body` làm fallback — giảm CPU overhead
+- Video không bị pause sau khi seek tới cuối quảng cáo (`play()` sau `currentTime = duration`)
+
 ## [2.0.0] — 2026-08-23
 
 ### Thêm

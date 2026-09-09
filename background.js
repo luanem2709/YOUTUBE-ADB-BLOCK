@@ -63,9 +63,14 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.alarms.create("funny-license", { periodInMinutes: 30 });
+// Keepalive: ping mỗi 1 phút để service worker không bị trình duyệt kill giữa chừng
+chrome.alarms.create("funny-keepalive", { periodInMinutes: 1 });
+
 chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name !== "funny-license") return;
-    FunnyLicense.recheck().then(() => applyLicenseRules());
+    if (alarm.name === "funny-license") {
+        FunnyLicense.recheck().then(() => applyLicenseRules());
+    }
+    // "funny-keepalive" chỉ cần trigger để giữ SW sống, không cần xử lý thêm
 });
 
 const mutedByUs = new Set();

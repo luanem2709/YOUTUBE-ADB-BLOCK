@@ -207,6 +207,38 @@
         return false;
     }
 
+    // Thử skip tối đa MAX_RETRY lần, mỗi lần cách nhau RETRY_DELAY ms
+    const MAX_RETRY = 3;
+    const RETRY_DELAY = 200;
+
+    function skipWithRetry(selectors, attempt) {
+        if (skipViaPlayerAPI()) {
+            postCount("video");
+            return;
+        }
+
+        for (const selector of selectors) {
+            const btn = document.querySelector(selector);
+            if (btn && simulateTrustedClick(btn)) {
+                postCount("video");
+                return;
+            }
+        }
+
+        const surveySkip = document.querySelector(
+            ".ytp-ad-skip-ad-slot button, .ytp-ad-survey-player-overlay-skip-or-preview button"
+        );
+        if (surveySkip && simulateTrustedClick(surveySkip)) {
+            postCount("video");
+            return;
+        }
+
+        // Chưa skip được — thử lại sau RETRY_DELAY ms
+        if (attempt < MAX_RETRY) {
+            setTimeout(() => skipWithRetry(selectors, attempt + 1), RETRY_DELAY);
+        }
+    }
+
     function simulateTrustedClick(element) {
         const rect = element.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return false;
@@ -300,26 +332,7 @@
         const msg = event.data;
 
         if (msg.type === "FG_SKIP") {
-            if (skipViaPlayerAPI()) {
-                postCount("video");
-                return;
-            }
-
-            const selectors = msg.selectors || [];
-            for (const selector of selectors) {
-                const btn = document.querySelector(selector);
-                if (btn && simulateTrustedClick(btn)) {
-                    postCount("video");
-                    return;
-                }
-            }
-
-            const surveySkip = document.querySelector(
-                ".ytp-ad-skip-ad-slot button, .ytp-ad-survey-player-overlay-skip-or-preview button"
-            );
-            if (surveySkip && simulateTrustedClick(surveySkip)) {
-                postCount("video");
-            }
+            skipWithRetry(msg.selectors || [], 0);
         }
 
         if (msg.type === "FG_DISMISS") {

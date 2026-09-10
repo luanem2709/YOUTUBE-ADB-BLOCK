@@ -310,10 +310,15 @@
             });
         }
 
-        const dismissBtn = document.querySelector(
-            "ytd-enforcement-message-view-model button, ytd-button-renderer.style-primary button"
+        // Chỉ click nút nằm TRONG enforcement dialog — không dùng selector chung
+        // vì ytd-button-renderer.style-primary button match cả Subscribe/Like
+        const enforcementContainer = document.querySelector(
+            "ytd-enforcement-message-view-model, tp-yt-paper-dialog ytd-enforcement-message-view-model"
         );
-        if (dismissBtn && simulateTrustedClick(dismissBtn)) removed = true;
+        if (enforcementContainer) {
+            const dismissBtn = enforcementContainer.querySelector("button");
+            if (dismissBtn && simulateTrustedClick(dismissBtn)) removed = true;
+        }
 
         if (removed) postCount("antiAdblock");
         return removed;

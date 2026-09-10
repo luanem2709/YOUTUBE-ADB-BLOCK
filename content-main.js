@@ -143,9 +143,22 @@
     const originalAddEventListener = EventTarget.prototype.addEventListener;
     const originalRemoveEventListener = EventTarget.prototype.removeEventListener;
 
+    // Các event tần suất cao — KHÔNG wrap để tránh gây lag/đứng khi lăn chuột
+    const SKIP_WRAP_TYPES = new Set([
+        "wheel", "scroll", "mousemove", "pointermove", "touchmove",
+        "mouseenter", "mouseleave", "mouseover", "mouseout",
+        "pointerover", "pointerout", "pointerenter", "pointerleave",
+        "dragover", "drag",
+    ]);
+
     function hookEventTrust() {
         EventTarget.prototype.addEventListener = function (type, listener, options) {
             if (!listener) {
+                return originalAddEventListener.call(this, type, listener, options);
+            }
+
+            // Bỏ qua wrap với event tần suất cao
+            if (SKIP_WRAP_TYPES.has(type)) {
                 return originalAddEventListener.call(this, type, listener, options);
             }
 
@@ -189,6 +202,10 @@
         };
 
         EventTarget.prototype.removeEventListener = function (type, listener, options) {
+            // Nếu là event bị skip wrap, dùng listener gốc luôn
+            if (SKIP_WRAP_TYPES.has(type)) {
+                return originalRemoveEventListener.call(this, type, listener, options);
+            }
             const wrapped = listenerMap.get(listener) || listener;
             return originalRemoveEventListener.call(this, type, wrapped, options);
         };

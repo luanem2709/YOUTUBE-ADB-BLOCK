@@ -302,25 +302,40 @@
 
     function removeAntiAdblock() {
         let removed = false;
-        for (const selector of ANTI_ADBLOCK_SELECTORS) {
-            document.querySelectorAll(selector).forEach((el) => {
-                const dialog = el.closest("tp-yt-paper-dialog, ytd-popup-container, #dialog");
-                (dialog || el).remove();
-                removed = true;
-            });
-        }
 
-        // Chỉ click nút nằm TRONG enforcement dialog — không dùng selector chung
-        // vì ytd-button-renderer.style-primary button match cả Subscribe/Like
+        // 1. Ưu tiên click nút Đóng/Bỏ qua trong dialog để YouTube tự dọn dẹp sạch sẽ
         const enforcementContainer = document.querySelector(
             "ytd-enforcement-message-view-model, tp-yt-paper-dialog ytd-enforcement-message-view-model"
         );
         if (enforcementContainer) {
             const dismissBtn = enforcementContainer.querySelector("button");
-            if (dismissBtn && simulateTrustedClick(dismissBtn)) removed = true;
+            if (dismissBtn && simulateTrustedClick(dismissBtn)) {
+                removed = true;
+            }
         }
 
-        if (removed) postCount("antiAdblock");
+        // 2. Nếu nút click không ăn (hoặc không có nút), mới remove DOM thủ công
+        for (const selector of ANTI_ADBLOCK_SELECTORS) {
+            document.querySelectorAll(selector).forEach((el) => {
+                const dialog = el.closest("tp-yt-paper-dialog, ytd-popup-container, #dialog");
+                if (dialog || el) {
+                    (dialog || el).remove();
+                    removed = true;
+                }
+            });
+        }
+
+        // 3. Dọn dẹp backdrop (cái lớp mờ vô hình chặn click/scroll) nếu dialog bị gỡ bằng tay
+        if (removed) {
+            document.querySelectorAll("tp-yt-iron-overlay-backdrop").forEach(backdrop => {
+                // Nếu không còn dialog nào đang mở, dọn luôn backdrop
+                if (!document.querySelector("tp-yt-paper-dialog[aria-hidden='false'], ytd-popup-container > tp-yt-paper-dialog:not([aria-hidden='true'])")) {
+                    backdrop.remove();
+                }
+            });
+            postCount("antiAdblock");
+        }
+
         return removed;
     }
 

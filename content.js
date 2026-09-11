@@ -245,12 +245,16 @@ function skipVideoAd() {
     }
 
     const adVideo = document.querySelector("video.html5-main-video");
-    if (adVideo) {
+    // CHỈ tua/mute video nếu CHẮC CHẮN nó đang là quảng cáo
+    // (tránh việc tua nhầm video chính khi chuyển bài mà DOM chưa dọn dẹp ad-module)
+    if (adVideo && (isAdActive || hasSkipButton || hasSurveySkip)) {
         if (settings.muteAds) adVideo.muted = true;
         if (settings.fastSkip) adVideo.playbackRate = 16;
         if (settings.fastSkip && adVideo.duration && isFinite(adVideo.duration)) {
-            adVideo.currentTime = adVideo.duration;
-            // Đảm bảo video không bị pause sau khi seek tới cuối
+            // Không seek nếu duration quá dài (video thật thường > vài phút, ad thường ngắn)
+            if (adVideo.duration < 300) {
+                adVideo.currentTime = adVideo.duration;
+            }
             if (adVideo.paused) {
                 adVideo.play().catch(() => {});
             }

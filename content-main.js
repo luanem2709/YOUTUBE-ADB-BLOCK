@@ -351,10 +351,13 @@
 
         if (!isAd || !allowLicense) return;
 
-        if (video.playbackRate !== 16) video.playbackRate = 16;
-        video.muted = true;
-        if (video.duration && isFinite(video.duration) && video.currentTime < video.duration - 0.1) {
-            video.currentTime = video.duration;
+        // An toàn: chỉ xử lý nếu video có vẻ giống quảng cáo (ngắn)
+        if (video.duration && isFinite(video.duration) && video.duration < 300) {
+            if (video.playbackRate !== 16) video.playbackRate = 16;
+            video.muted = true;
+            if (video.currentTime < video.duration - 0.1) {
+                video.currentTime = video.duration;
+            }
         }
     }, true);
 

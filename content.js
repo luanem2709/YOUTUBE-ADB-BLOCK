@@ -50,10 +50,10 @@ const SKIP_SELECTORS = [
     "button.ytp-ad-skip-button-modern.ytp-button",
     ".ytp-ad-skip-button-slot button",
     ".ytp-ad-skip-button-container button",
-    ".ytp-ad-skip-button-container",
     ".ytp-ad-skip-button",
     ".ytp-ad-skip-button-modern",
     ".ytp-skip-ad-button",
+    "button.ytp-skip-ad-button",
 ];
 
 const OVERLAY_SELECTORS = [
@@ -223,36 +223,68 @@ function handleAds() {
     }
 }
 
-function skipVideoAd() {
+function isVisibleEl(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return false;
+    if (rect.bottom < 0 || rect.top > (window.innerHeight || 0)) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+    return true;
+}
+
+function isPlayerAdActive() {
     const moviePlayer = document.getElementById("movie_player");
-    const isAdActive = moviePlayer && (
+    if (moviePlayer && (
         moviePlayer.classList.contains("ad-showing") ||
         moviePlayer.classList.contains("ad-interrupting")
+    )) return true;
+
+    const visibleSkip = SKIP_SELECTORS.some((s) => isVisibleEl(document.querySelector(s)));
+    if (visibleSkip) return true;
+
+    const overlay = document.querySelector(
+        ".ytp-ad-player-overlay, .ytp-ad-player-overlay-layout, .ytp-ad-preview-container, .ytp-ad-text"
     );
+    return isVisibleEl(overlay);
+}
 
-    const adModule = document.querySelector(".video-ads.ytp-ad-module");
-    const hasAdModule = adModule && adModule.children.length > 0;
+let adMuteApplied = false;
+let adRateApplied = false;
 
-    let hasSkipButton = SKIP_SELECTORS.some((s) => document.querySelector(s));
-    const hasSurveySkip = document.querySelector(
-        ".ytp-ad-skip-ad-slot button, .ytp-ad-survey-player-overlay-skip-or-preview button"
-    );
+function restoreContentPlayback() {
+    const video = document.querySelector("#movie_player video.html5-main-video");
+    if (!video) return;
+    if (adRateApplied && video.playbackRate !== 1) {
+        video.playbackRate = 1;
+    }
+    adRateApplied = false;
+    if (adMuteApplied && video.muted) {
+        video.muted = false;
+    }
+    adMuteApplied = false;
+}
 
-    if (!isAdActive && !hasAdModule && !hasSkipButton && !hasSurveySkip) {
-        // Kiểm tra thêm Shorts ads
+function skipVideoAd() {
+    if (!isPlayerAdActive()) {
+        restoreContentPlayback();
         skipShortsAd();
         return;
     }
 
-    const adVideo = document.querySelector("video.html5-main-video");
-    // CHỈ tua/mute video nếu CHẮC CHẮN nó đang là quảng cáo
-    // (tránh việc tua nhầm video chính khi chuyển bài mà DOM chưa dọn dẹp ad-module)
-    if (adVideo && (isAdActive || hasSkipButton || hasSurveySkip)) {
-        if (settings.muteAds) adVideo.muted = true;
-        if (settings.fastSkip) adVideo.playbackRate = 16;
-        if (settings.fastSkip && adVideo.duration && isFinite(adVideo.duration)) {
-            // Không seek nếu duration quá dài (video thật thường > vài phút, ad thường ngắn)
-            if (adVideo.duration < 300) {
+    const adVideo = document.querySelector("#movie_player video.html5-main-video, video.html5-main-video");
+    // Chỉ tua/mute khi player đang ở trạng thái quảng cáo — tránh đụng video chính lúc đổi clip/chương
+    if (adVideo) {
+        if (settings.muteAds && !adVideo.muted) {
+            adVideo.muted = true;
+            adMuteApplied = true;
+        }
+        if (settings.fastSkip) {
+            if (adVideo.playbackRate !== 16) {
+                adVideo.playbackRate = 16;
+                adRateApplied = true;
+            }
+            if (adVideo.duration && isFinite(adVideo.duration) && adVideo.duration > 0 && adVideo.duration < 120) {
                 adVideo.currentTime = adVideo.duration;
             }
             if (adVideo.paused) {

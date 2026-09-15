@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.2.2] — 2026-09-15
+
+### Sửa
+- Lăn chuột bị cứng trên YouTube: gỡ khóa scroll khi dialog chống QC bị ẩn nhưng vẫn giữ overflow:hidden
+
+## [2.2.1] — 2026-09-15
+
+### Sửa
+- Video không còn tự pause khi đổi clip/chương: chỉ skip/tua khi player thực sự đang QC, không đóng menu YouTube nhầm
+- Tự bấm tiếp tục khi YouTube hiện hộp thoại "Video đã tạm dừng"
+
 ## [2.2.0] — 2026-09-09
 
 ### Thêm

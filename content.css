@@ -25,3 +25,14 @@ ytd-enforcement-message-view-model,
 .ytd-enforcement-message-view-model {
     display: none !important;
 }
+
+/* Dialog chống QC bị ẩn nhưng YouTube vẫn khóa scroll — mở lại lăn chuột */
+html.iron-overlay-scroll-block,
+html.hidenscroll,
+html.yt-dialog-scroll-disable,
+body.iron-overlay-scroll-block,
+body.hidenscroll,
+body.yt-dialog-scroll-disable {
+    overflow: auto !important;
+    overflow-y: auto !important;
+}

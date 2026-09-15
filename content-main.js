@@ -13,15 +13,12 @@
     const ANTI_ADBLOCK_SELECTORS = [
         "ytd-enforcement-message-view-model",
         ".ytd-enforcement-message-view-model",
-        "ytd-popup-container ytd-enforcement-message-view-model",
-        "#dialog.ytd-popup-container",
         "tp-yt-paper-dialog ytd-enforcement-message-view-model",
     ];
 
     const DISMISS_SELECTORS = [
         "button.ytp-ad-overlay-close-button",
         ".ytp-ad-feedback-dialog-close-button",
-        "tp-yt-paper-dialog #dismiss-button",
         ".ytp-ad-survey-player-overlay-close-button",
         ".ytp-ad-action-interstitial-close-button",
     ];
@@ -145,7 +142,8 @@
 
     // Các event tần suất cao — KHÔNG wrap để tránh gây lag/đứng khi lăn chuột
     const SKIP_WRAP_TYPES = new Set([
-        "wheel", "scroll", "mousemove", "pointermove", "touchmove",
+        "wheel", "mousewheel", "DOMMouseScroll", "scroll",
+        "mousemove", "pointermove", "touchmove",
         "mouseenter", "mouseleave", "mouseover", "mouseout",
         "pointerover", "pointerout", "pointerenter", "pointerleave",
         "dragover", "drag",
@@ -211,8 +209,58 @@
         };
     }
 
+    function isVisibleEl(el) {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) return false;
+        if (rect.bottom < 0 || rect.top > (window.innerHeight || 0)) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+        return true;
+    }
+
+    function isAdPlaying() {
+        const player = document.getElementById("movie_player");
+        return !!(player && (
+            player.classList.contains("ad-showing") ||
+            player.classList.contains("ad-interrupting")
+        ));
+    }
+
+    function resumeMainPlayer() {
+        if (isAdPlaying()) return;
+        const player = document.getElementById("movie_player");
+        const video = document.querySelector("#movie_player video.html5-main-video, video.html5-main-video");
+        if (video && video.paused) {
+            const p = video.play();
+            if (p && typeof p.catch === "function") p.catch(() => {});
+        }
+        if (player && typeof player.playVideo === "function") {
+            try { player.playVideo(); } catch { /* ignore */ }
+        }
+    }
+
+    function confirmContinueWatching() {
+        const pauseRe = /video paused|continue watching|tạm dừng|tam dung|tiếp tục xem|tiep tuc xem|đã tạm dừng|se ha pausado|vidéo en pause/i;
+        const dialogs = document.querySelectorAll("yt-confirm-dialog-renderer, tp-yt-paper-dialog");
+        for (const dialog of dialogs) {
+            const text = (dialog.innerText || "").trim();
+            if (!text || !pauseRe.test(text)) continue;
+            const btn = dialog.querySelector(
+                "#confirm-button button, #confirm-button, button[aria-label='Yes'], button[aria-label='Có'], button[aria-label='OK']"
+            );
+            if (btn && isVisibleEl(btn)) {
+                simulateTrustedClick(btn);
+                setTimeout(resumeMainPlayer, 80);
+                return true;
+            }
+        }
+        return false;
+    }
+
     function skipViaPlayerAPI() {
         const player = document.getElementById("movie_player");
+        if (!isAdPlaying()) return false;
         if (player && typeof player.skipAd === "function") {
             try {
                 player.skipAd();
@@ -229,14 +277,11 @@
     const RETRY_DELAY = 200;
 
     function skipWithRetry(selectors, attempt) {
-        if (skipViaPlayerAPI()) {
-            postCount("video");
-            return;
-        }
+        if (!isAdPlaying()) return;
 
         for (const selector of selectors) {
             const btn = document.querySelector(selector);
-            if (btn && simulateTrustedClick(btn)) {
+            if (btn && isVisibleEl(btn) && simulateTrustedClick(btn)) {
                 postCount("video");
                 return;
             }
@@ -245,20 +290,25 @@
         const surveySkip = document.querySelector(
             ".ytp-ad-skip-ad-slot button, .ytp-ad-survey-player-overlay-skip-or-preview button"
         );
-        if (surveySkip && simulateTrustedClick(surveySkip)) {
+        if (surveySkip && isVisibleEl(surveySkip) && simulateTrustedClick(surveySkip)) {
             postCount("video");
             return;
         }
 
-        // Chưa skip được — thử lại sau RETRY_DELAY ms
+        if (skipViaPlayerAPI()) {
+            postCount("video");
+            return;
+        }
+
         if (attempt < MAX_RETRY) {
             setTimeout(() => skipWithRetry(selectors, attempt + 1), RETRY_DELAY);
         }
     }
 
     function simulateTrustedClick(element) {
+        if (!isVisibleEl(element)) return false;
+
         const rect = element.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) return false;
 
         const x = rect.left + rect.width / 2;
         const y = rect.top + rect.height / 2;
@@ -300,40 +350,75 @@
         return dismissed;
     }
 
+    function unlockPageScroll() {
+        const html = document.documentElement;
+        const body = document.body;
+        const lockClasses = [
+            "iron-overlay-scroll-block",
+            "hidenscroll",
+            "no-scroll",
+            "disable-scroll",
+            "yt-dialog-scroll-disable",
+        ];
+        [html, body].forEach((el) => {
+            if (!el) return;
+            lockClasses.forEach((c) => el.classList.remove(c));
+            if (el.style.overflow === "hidden" || el.style.overflowY === "hidden") {
+                el.style.removeProperty("overflow");
+                el.style.removeProperty("overflow-y");
+            }
+        });
+        if (body && body.style.position === "fixed") {
+            const y = Math.abs(parseInt(body.style.top || "0", 10)) || 0;
+            body.style.removeProperty("position");
+            body.style.removeProperty("top");
+            body.style.removeProperty("left");
+            body.style.removeProperty("width");
+            if (y) window.scrollTo(0, y);
+        }
+        document.querySelectorAll("tp-yt-iron-overlay-backdrop").forEach((backdrop) => {
+            const enforcement = document.querySelector("ytd-enforcement-message-view-model");
+            if (!enforcement) backdrop.remove();
+        });
+    }
+
     function removeAntiAdblock() {
         let removed = false;
 
-        // 1. Ưu tiên click nút Đóng/Bỏ qua trong dialog để YouTube tự dọn dẹp sạch sẽ
         const enforcementContainer = document.querySelector(
             "ytd-enforcement-message-view-model, tp-yt-paper-dialog ytd-enforcement-message-view-model"
         );
         if (enforcementContainer) {
-            const dismissBtn = enforcementContainer.querySelector("button");
-            if (dismissBtn && simulateTrustedClick(dismissBtn)) {
+            const dismissBtn = enforcementContainer.querySelector(
+                "#dismiss-button, button[aria-label*='Dismiss' i], button[aria-label*='Close' i], button[aria-label*='Đóng' i]"
+            ) || enforcementContainer.querySelector("button");
+            // Nút có thể bị ẩn bằng CSS — vẫn click để YouTube gỡ khóa scroll
+            if (dismissBtn) {
+                try { dismissBtn.click(); } catch { /* ignore */ }
+                simulateTrustedClick(dismissBtn);
                 removed = true;
             }
         }
 
-        // 2. Nếu nút click không ăn (hoặc không có nút), mới remove DOM thủ công
         for (const selector of ANTI_ADBLOCK_SELECTORS) {
             document.querySelectorAll(selector).forEach((el) => {
-                const dialog = el.closest("tp-yt-paper-dialog, ytd-popup-container, #dialog");
-                if (dialog || el) {
-                    (dialog || el).remove();
+                const dialog = el.closest("tp-yt-paper-dialog");
+                const target = dialog && dialog.querySelector("ytd-enforcement-message-view-model") ? dialog : el;
+                if (target && target !== document.body) {
+                    target.remove();
                     removed = true;
                 }
             });
         }
 
-        // 3. Dọn dẹp backdrop (cái lớp mờ vô hình chặn click/scroll) nếu dialog bị gỡ bằng tay
+        unlockPageScroll();
+
         if (removed) {
-            document.querySelectorAll("tp-yt-iron-overlay-backdrop").forEach(backdrop => {
-                // Nếu không còn dialog nào đang mở, dọn luôn backdrop
-                if (!document.querySelector("tp-yt-paper-dialog[aria-hidden='false'], ytd-popup-container > tp-yt-paper-dialog:not([aria-hidden='true'])")) {
-                    backdrop.remove();
-                }
-            });
             postCount("antiAdblock");
+            setTimeout(() => {
+                unlockPageScroll();
+                resumeMainPlayer();
+            }, 80);
         }
 
         return removed;
@@ -352,7 +437,7 @@
         if (!isAd || !allowLicense) return;
 
         // An toàn: chỉ xử lý nếu video có vẻ giống quảng cáo (ngắn)
-        if (video.duration && isFinite(video.duration) && video.duration < 300) {
+        if (video.duration && isFinite(video.duration) && video.duration < 120) {
             if (video.playbackRate !== 16) video.playbackRate = 16;
             video.muted = true;
             if (video.currentTime < video.duration - 0.1) {
@@ -380,6 +465,7 @@
         }
 
         if (msg.type === "FG_ANTI_ADBLOCK") {
+            confirmContinueWatching();
             removeAntiAdblock();
         }
     });
@@ -393,5 +479,9 @@
 
     postIdentity();
     setInterval(postIdentity, 5000);
-    setInterval(removeAntiAdblock, 3000);
+    setInterval(() => {
+        confirmContinueWatching();
+        removeAntiAdblock();
+        unlockPageScroll();
+    }, 1500);
 })();

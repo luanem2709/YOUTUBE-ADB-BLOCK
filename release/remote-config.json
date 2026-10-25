@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "_comment": "Selector BỔ SUNG khi YouTube/Spotify đổi giao diện. Extension tải file này mỗi 6 giờ — sửa ở đây, push lên GitHub là mọi máy nhận được, không cần phát hành bản mới. Chỉ thêm selector CSS (tối đa 100 mục/danh sách, ≤200 ký tự, không chứa { } < >). Tăng 'version' mỗi lần sửa.",
+  "yt": {
+    "adSignals": [],
+    "skipButtons": [],
+    "antiAdblock": [],
+    "banners": []
+  },
+  "spotify": {
+    "adUi": [],
+    "skipButtons": []
+  }
+}

@@ -3,12 +3,32 @@ let msgToken = null;
 let adsBlockedCount = 0;
 let debounceTimer = null;
 let whitelistChannels = [];
+let cachedWhitelisted = false;
+let lastWhitelistCheckAt = 0;
+let lastWhitelistUrl = "";
 let ytLoggedIn = null;
 let currentUserKey = "";
 let currentUser = { id: "guest", name: "Khách", avatar: "" };
 let userDetectTimer = null;
-const DEBOUNCE_DELAY = 50;
+const DEBOUNCE_DELAY = 80;
 const hiddenElements = new WeakSet();
+
+let cachedPlayer = null;
+let cachedVideo = null;
+
+function getPlayer() {
+    if (cachedPlayer && cachedPlayer.isConnected) return cachedPlayer;
+    cachedPlayer = document.getElementById("movie_player");
+    return cachedPlayer;
+}
+
+function getVideo() {
+    if (cachedVideo && cachedVideo.isConnected) return cachedVideo;
+    const player = getPlayer();
+    cachedVideo = (player && player.querySelector("video.html5-main-video")) ||
+        document.querySelector("#movie_player video.html5-main-video, video.html5-main-video");
+    return cachedVideo;
+}
 
 const DEFAULT_SETTINGS = {
     blockVideo: true,
@@ -17,50 +37,72 @@ const DEFAULT_SETTINGS = {
     blockAntiAdblock: true,
     muteAds: true,
     fastSkip: true,
+    backgroundPlay: true,
+    pipButton: true,
+    hideUpsell: true,
+    videoQuality: "auto",
+    sponsorBlock: true,
+    jumpAhead: true,
+    ambientGlow: true,
 };
 
-function licenseAllows(result) {
-    if (result.licenseValid !== true) return false;
-    const raw = result.licenseExpires;
-    if (!raw) return false;
-    const text = String(raw).trim();
-    let day = null;
-    let m = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m) day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    else {
-        m = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
-        if (m) day = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+function applyPageClasses() {
+    const root = document.documentElement;
+    if (!root) return;
+    const want = isEnabled && settings.hideUpsell !== false;
+    if (root.classList.contains("fg-hide-upsell") !== want) {
+        root.classList.toggle("fg-hide-upsell", want);
     }
-    if (!day || Number.isNaN(day.getTime())) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return day >= today;
+}
+
+const LICENSE_KEYS = ["licenseKey", "licenseToken", "licenseSig"];
+
+// Xác thực chữ ký số của key (license.js được nạp trước file này)
+async function licenseAllows(result) {
+    try {
+        return (await FunnyLicense.verifyStored(result)).ok;
+    } catch {
+        return false;
+    }
 }
 
 let settings = { ...DEFAULT_SETTINGS };
 
-function applyEnabled(enabledFlag, licensed) {
-    isEnabled = !!enabledFlag && !!licensed;
-    window.postMessage({ type: "FG_LICENSE", ok: isEnabled }, "*");
-    if (isEnabled) startWhenReady();
-    else if (typeof stopObserver === "function") stopObserver();
+function syncConfigToMain() {
+    applyPageClasses();
+    const whitelisted = isWhitelisted();
+    lastSentWhitelisted = whitelisted;
+    window.postMessage({
+        type: "FG_LICENSE",
+        ok: isEnabled,
+        settings,
+        whitelisted,
+        remote: remoteYt,
+    }, "*");
+    if (msgToken) {
+        postToMain("FG_CONFIG", { settings, whitelisted, remote: remoteYt });
+    }
 }
 
-const SKIP_SELECTORS = [
-    "button.ytp-ad-skip-button-modern.ytp-button",
-    ".ytp-ad-skip-button-slot button",
-    ".ytp-ad-skip-button-container button",
-    ".ytp-ad-skip-button",
-    ".ytp-ad-skip-button-modern",
-    ".ytp-skip-ad-button",
-    "button.ytp-skip-ad-button",
-];
+function applyEnabled(enabledFlag, licensed) {
+    isEnabled = !!enabledFlag && !!licensed;
+    syncConfigToMain();
+    if (isEnabled) {
+        startWhenReady();
+        startAdTick();
+        window.postMessage({ type: "FG_RESUME_PLAY" }, "*");
+    } else {
+        if (typeof stopObserver === "function") stopObserver();
+        stopAdTick();
+    }
+}
 
 const OVERLAY_SELECTORS = [
     ".ytp-ad-overlay-container",
     ".ytp-ad-text-overlay",
     ".ytp-ad-image-overlay",
 ];
+const OVERLAY_SELECTOR_STR = OVERLAY_SELECTORS.join(",");
 
 const BANNER_SELECTORS = [
     "#player-ads",
@@ -79,6 +121,39 @@ const BANNER_SELECTORS = [
     "ytm-ad-slot-renderer",
     "ytm-in-feed-ad-layout-renderer",
 ];
+let BANNER_SELECTOR_STR = BANNER_SELECTORS.join(",");
+
+// ---------- Cấu hình từ xa (selector mới tải từ GitHub, không cần phát hành bản mới) ----------
+let remoteYt = null;
+
+function cleanSelectors(list) {
+    if (!Array.isArray(list)) return [];
+    const out = [];
+    for (const raw of list.slice(0, 100)) {
+        const sel = String(raw || "").trim();
+        if (!sel || sel.length > 200 || /[{}<>]/.test(sel)) continue;
+        try { document.createDocumentFragment().querySelector(sel); } catch { continue; }
+        out.push(sel);
+    }
+    return out;
+}
+
+function applyRemoteConfig(cfg) {
+    const yt = cfg && typeof cfg === "object" && cfg.yt && typeof cfg.yt === "object" ? cfg.yt : {};
+    const banners = cleanSelectors(yt.banners);
+    BANNER_SELECTOR_STR = BANNER_SELECTORS.concat(banners.filter((b) => !BANNER_SELECTORS.includes(b))).join(",");
+    remoteYt = {
+        adSignals: cleanSelectors(yt.adSignals),
+        skipButtons: cleanSelectors(yt.skipButtons),
+        antiAdblock: cleanSelectors(yt.antiAdblock),
+    };
+}
+
+const DISMISS_CHECK_STR =
+    "button.ytp-ad-overlay-close-button, .ytp-ad-feedback-dialog-close-button, .ytp-ad-survey-player-overlay-close-button, .ytp-ad-action-interstitial-close-button";
+
+const ANTI_ADBLOCK_CHECK_STR =
+    "ytd-enforcement-message-view-model, .ytd-enforcement-message-view-model, bka-enforcement-message-view-model, yt-confirm-dialog-renderer";
 
 function postToMain(type, extra = {}) {
     if (!msgToken) return;
@@ -87,31 +162,42 @@ function postToMain(type, extra = {}) {
 
 function initialize() {
     chrome.storage.local.get(
-        ["enabled", "adsBlocked", "settings", "whitelistChannels", "licenseValid", "licenseExpires"],
-        (result) => {
+        ["enabled", "adsBlocked", "settings", "whitelistChannels", "remoteConfig", ...LICENSE_KEYS],
+        async (result) => {
             adsBlockedCount = result.adsBlocked || 0;
             settings = { ...DEFAULT_SETTINGS, ...(result.settings || {}) };
             whitelistChannels = result.whitelistChannels || [];
+            lastWhitelistCheckAt = 0;
+            applyRemoteConfig(result.remoteConfig);
             const on = result.enabled !== undefined ? result.enabled : true;
-            applyEnabled(on, licenseAllows(result));
+            applyEnabled(on, await licenseAllows(result));
         }
     );
 
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== "local") return;
 
-        if (changes.enabled || changes.licenseValid || changes.licenseExpires) {
-            chrome.storage.local.get(["enabled", "licenseValid", "licenseExpires"], (r) => {
-                const on = changes.enabled ? changes.enabled.newValue : (r.enabled !== false);
-                applyEnabled(on, licenseAllows(r));
+        if (changes.adsBlocked) {
+            adsBlockedCount = changes.adsBlocked.newValue || 0;
+        }
+        if (changes.enabled || changes.licenseToken || changes.licenseSig || changes.licenseKey) {
+            chrome.storage.local.get(["enabled", ...LICENSE_KEYS], async (r) => {
+                applyEnabled(r.enabled !== false, await licenseAllows(r));
             });
+        }
+        if (changes.remoteConfig) {
+            applyRemoteConfig(changes.remoteConfig.newValue);
+            syncConfigToMain();
         }
         if (changes.settings) {
             settings = { ...DEFAULT_SETTINGS, ...changes.settings.newValue };
-            if (isEnabled) handleAds();
+            syncConfigToMain();
+            if (isEnabled) handleAds(true);
         }
         if (changes.whitelistChannels) {
             whitelistChannels = changes.whitelistChannels.newValue || [];
+            lastWhitelistCheckAt = 0;
+            syncConfigToMain();
         }
     });
 
@@ -120,12 +206,26 @@ function initialize() {
 
         if (event.data?.type === "FG_TOKEN_READY") {
             msgToken = event.data.token;
-            if (isEnabled) handleAds();
+            syncConfigToMain();
+            if (isEnabled) handleAds(true);
             return;
         }
 
         if (event.data?.type === "FG_COUNT" && event.data.token === msgToken) {
             incrementBlockCount(event.data.category || "video");
+        }
+
+        // SponsorBlock: MAIN world xin danh sách đoạn tài trợ → background tải (tránh CSP của YouTube)
+        if (event.data?.type === "FG_SB_REQ" && event.data.token === msgToken && isEnabled) {
+            const videoId = String(event.data.videoId || "");
+            if (!/^[\w-]{6,20}$/.test(videoId)) return;
+            try {
+                chrome.runtime.sendMessage({ type: "FG_SB_SEGMENTS", videoId }, (res) => {
+                    if (chrome.runtime.lastError) return;
+                    postToMain("FG_SB", { videoId, segments: (res && res.segments) || [] });
+                });
+            } catch { /* extension vừa cập nhật */ }
+            return;
         }
 
         if (event.data?.type === "FG_IDENTITY" && event.data.token === msgToken) {
@@ -135,24 +235,33 @@ function initialize() {
         }
     });
 
+    try {
+        chrome.runtime.onMessage.addListener((msg) => {
+            if (msg?.type === "FG_RESUME") {
+                window.postMessage({ type: "FG_RESUME_PLAY" }, "*");
+            }
+        });
+    } catch { /* ignore */ }
+
     document.addEventListener("yt-navigate-finish", () => {
+        cachedPlayer = null;
+        cachedVideo = null;
+        lastWhitelistCheckAt = 0;
+        syncConfigToMain();
         detectAndStoreUser();
-        if (isEnabled) handleAds();
+        if (isEnabled) handleAds(true);
     });
 
     detectAndStoreUser();
-    setInterval(detectAndStoreUser, 10000);
+    window.postMessage({ type: "FG_TOKEN_REQUEST" }, "*");
+    setTimeout(() => window.postMessage({ type: "FG_TOKEN_REQUEST" }, "*"), 300);
 }
 
 function startWhenReady() {
     if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", () => {
-            startObserver();
-            handleAds();
-        }, { once: true });
+        document.addEventListener("DOMContentLoaded", () => handleAds(true), { once: true });
     } else {
-        startObserver();
-        handleAds();
+        handleAds(true);
     }
 }
 
@@ -169,186 +278,121 @@ function getChannelId() {
 
 function isWhitelisted() {
     if (!whitelistChannels.length) return false;
+    const now = Date.now();
+    const curUrl = location.href;
+    if (curUrl === lastWhitelistUrl && now - lastWhitelistCheckAt < 2500) {
+        return cachedWhitelisted;
+    }
+    lastWhitelistUrl = curUrl;
+    lastWhitelistCheckAt = now;
+
     const channelId = getChannelId();
-    if (!channelId) return false;
-    return whitelistChannels.some((entry) => {
-        const normalized = entry.trim().replace(/^@/, "");
-        return normalized && (
-            channelId === normalized ||
-            channelId.includes(normalized) ||
-            normalized.includes(channelId)
-        );
+    if (!channelId) {
+        cachedWhitelisted = false;
+        return false;
+    }
+    cachedWhitelisted = whitelistChannels.some((entry) => {
+        let normalized = String(entry || "").trim();
+        const m = normalized.match(/\/(?:channel\/(UC[\w-]+)|@([\w.-]+))/);
+        if (m) normalized = m[1] || m[2];
+        normalized = normalized.replace(/^@/, "");
+        // So khớp chính xác (không phân biệt hoa thường) — tránh 1 ký tự "a" whitelist toàn bộ kênh
+        return normalized && channelId.toLowerCase() === normalized.toLowerCase();
     });
+    return cachedWhitelisted;
 }
 
-let observer = null;
+let lastSentWhitelisted = null;
 
-function startObserver() {
-    if (observer) return;
+// Tên kênh render chậm sau khi chuyển trang → báo lại MAIN world khi trạng thái whitelist thay đổi
+function syncWhitelistIfChanged() {
+    const w = isWhitelisted();
+    if (w !== lastSentWhitelisted) {
+        lastSentWhitelisted = w;
+        syncConfigToMain();
+    }
+}
 
-    // Dùng movie_player → page-manager → body (theo thứ tự ưu tiên giảm dần)
-    // để tránh observe quá nhiều DOM changes không cần thiết
-    const targetNode =
-        document.getElementById("movie_player") ||
-        document.getElementById("page-manager") ||
-        document.body;
+let adTick = null;
 
-    observer = new MutationObserver(() => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(handleAds, DEBOUNCE_DELAY);
-    });
+function startAdTick() {
+    if (adTick) return;
+    adTick = setInterval(() => {
+        if (!isEnabled) return;
+        applyPageClasses();
+        syncWhitelistIfChanged();
+        handleAds(false);
+    }, 450);
+}
 
-    observer.observe(targetNode, { childList: true, subtree: true });
+function stopAdTick() {
+    if (!adTick) return;
+    clearInterval(adTick);
+    adTick = null;
 }
 
 function stopObserver() {
-    if (observer) {
-        observer.disconnect();
-        observer = null;
-    }
     clearTimeout(debounceTimer);
 }
 
-function handleAds() {
+let lastBannerScanAt = 0;
+
+function handleAds(forceFullScan) {
     if (!isEnabled || isWhitelisted()) return;
 
     try {
-        if (settings.blockAntiAdblock) postToMain("FG_ANTI_ADBLOCK");
-        if (settings.blockVideo) skipVideoAd();
-        if (settings.blockOverlay) hideOverlayAds();
-        if (settings.blockBanner) hideCompanionAds();
-        if (settings.blockOverlay) postToMain("FG_DISMISS");
+        if (settings.blockAntiAdblock && document.querySelector(ANTI_ADBLOCK_CHECK_STR)) {
+            postToMain("FG_ANTI_ADBLOCK");
+        }
+        // Quảng cáo video do content-main.js (MAIN world) xử lý duy nhất — tránh 2 nơi cùng tua/mute gây xung đột
+        if (settings.blockOverlay) {
+            hideOverlayAds();
+            const root = getPlayer() || document;
+            if (root.querySelector(DISMISS_CHECK_STR)) {
+                postToMain("FG_DISMISS");
+            }
+        }
+        if (settings.blockBanner && document.visibilityState !== "hidden") {
+            const now = Date.now();
+            if (forceFullScan || now - lastBannerScanAt >= 1200) {
+                lastBannerScanAt = now;
+                hideCompanionAds();
+            }
+        }
     } catch (error) {
         console.debug("[FUNNYGAME] Lỗi:", error.message);
     }
 }
 
-function isVisibleEl(el) {
-    if (!el) return false;
-    const rect = el.getBoundingClientRect();
-    if (rect.width < 2 || rect.height < 2) return false;
-    if (rect.bottom < 0 || rect.top > (window.innerHeight || 0)) return false;
-    const style = window.getComputedStyle(el);
-    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
-    return true;
-}
-
-function isPlayerAdActive() {
-    const moviePlayer = document.getElementById("movie_player");
-    if (moviePlayer && (
-        moviePlayer.classList.contains("ad-showing") ||
-        moviePlayer.classList.contains("ad-interrupting")
-    )) return true;
-
-    const visibleSkip = SKIP_SELECTORS.some((s) => isVisibleEl(document.querySelector(s)));
-    if (visibleSkip) return true;
-
-    const overlay = document.querySelector(
-        ".ytp-ad-player-overlay, .ytp-ad-player-overlay-layout, .ytp-ad-preview-container, .ytp-ad-text"
-    );
-    return isVisibleEl(overlay);
-}
-
-let adMuteApplied = false;
-let adRateApplied = false;
-
-function restoreContentPlayback() {
-    const video = document.querySelector("#movie_player video.html5-main-video");
-    if (!video) return;
-    if (adRateApplied && video.playbackRate !== 1) {
-        video.playbackRate = 1;
-    }
-    adRateApplied = false;
-    if (adMuteApplied && video.muted) {
-        video.muted = false;
-    }
-    adMuteApplied = false;
-}
-
-function skipVideoAd() {
-    if (!isPlayerAdActive()) {
-        restoreContentPlayback();
-        skipShortsAd();
-        return;
-    }
-
-    const adVideo = document.querySelector("#movie_player video.html5-main-video, video.html5-main-video");
-    // Chỉ tua/mute khi player đang ở trạng thái quảng cáo — tránh đụng video chính lúc đổi clip/chương
-    if (adVideo) {
-        if (settings.muteAds && !adVideo.muted) {
-            adVideo.muted = true;
-            adMuteApplied = true;
-        }
-        if (settings.fastSkip) {
-            if (adVideo.playbackRate !== 16) {
-                adVideo.playbackRate = 16;
-                adRateApplied = true;
-            }
-            if (adVideo.duration && isFinite(adVideo.duration) && adVideo.duration > 0 && adVideo.duration < 120) {
-                adVideo.currentTime = adVideo.duration;
-            }
-            if (adVideo.paused) {
-                adVideo.play().catch(() => {});
-            }
-        }
-    }
-
-    postToMain("FG_SKIP", { selectors: SKIP_SELECTORS });
-}
-
-// Hỗ trợ YouTube Shorts: chặn quảng cáo interstitial trước/trong Shorts
-function skipShortsAd() {
-    // Shorts dùng overlay player riêng
-    const shortsAdOverlay = document.querySelector(
-        "ytd-reel-player-overlay-renderer .ytp-ad-module, " +
-        "ytd-shorts .ytp-ad-module, " +
-        ".reel-player-overlay-renderer .ytp-ad-module"
-    );
-    if (!shortsAdOverlay || shortsAdOverlay.children.length === 0) return;
-
-    const shortsVideo = document.querySelector(
-        "ytd-reel-player-overlay-renderer video, ytd-shorts video"
-    );
-    if (shortsVideo) {
-        if (settings.muteAds) shortsVideo.muted = true;
-        if (settings.fastSkip) shortsVideo.playbackRate = 16;
-        if (settings.fastSkip && shortsVideo.duration && isFinite(shortsVideo.duration)) {
-            shortsVideo.currentTime = shortsVideo.duration;
-            if (shortsVideo.paused) shortsVideo.play().catch(() => {});
-        }
-    }
-    postToMain("FG_SKIP", { selectors: SKIP_SELECTORS });
-}
-
-
-function hideElements(selectors, category) {
-    for (const selector of selectors) {
-        document.querySelectorAll(selector).forEach((el) => {
-            if (hiddenElements.has(el)) return;
-            hiddenElements.add(el);
-            if (category === "overlay") {
-                el.remove();
-            } else {
-                el.style.setProperty("display", "none", "important");
-            }
-            incrementBlockCount(category);
-        });
+function hideElements(selectorStr, category, rootNode = document) {
+    const nodes = rootNode.querySelectorAll(selectorStr);
+    for (let i = 0; i < nodes.length; i++) {
+        const el = nodes[i];
+        if (hiddenElements.has(el)) continue;
+        hiddenElements.add(el);
+        // Chỉ ẩn, không remove node thuộc player (remove có thể làm player YouTube lỗi)
+        el.style.setProperty("display", "none", "important");
+        incrementBlockCount(category);
     }
 }
 
 function hideOverlayAds() {
-    hideElements(OVERLAY_SELECTORS, "overlay");
+    hideElements(OVERLAY_SELECTOR_STR, "overlay", getPlayer() || document);
 }
 
 function hideCompanionAds() {
-    hideElements(BANNER_SELECTORS, "banner");
+    hideElements(BANNER_SELECTOR_STR, "banner", document);
 }
 
 let persistTimer = null;
 let pendingBreakdown = null;
 
 function todayKey() {
-    return new Date().toISOString().slice(0, 10);
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
 }
 
 function safeAvatar(src) {
@@ -446,16 +490,24 @@ function detectAndStoreUser() {
 function flushStats() {
     const delta = pendingBreakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0 };
     pendingBreakdown = null;
+    const totalDelta = Object.values(delta).reduce((a, b) => a + b, 0);
+    if (!totalDelta) return;
 
-    chrome.storage.local.get(["statsBreakdown", "statsHistory", "userStats"], (result) => {
-        const breakdown = { ...(result.statsBreakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0 }) };
+    chrome.storage.local.get(["adsBlocked", "statsBreakdown", "statsHistory", "userStats"], (result) => {
+        const breakdown = {
+            video: 0,
+            banner: 0,
+            overlay: 0,
+            antiAdblock: 0,
+            spotify: 0,
+            ...(result.statsBreakdown || {}),
+        };
         for (const [key, val] of Object.entries(delta)) {
             if (breakdown[key] !== undefined) breakdown[key] += val;
         }
 
         const history = [...(result.statsHistory || [])];
         const key = todayKey();
-        const totalDelta = Object.values(delta).reduce((a, b) => a + b, 0);
         const entry = history.find((h) => h.date === key);
         if (entry) entry.count += totalDelta;
         else history.push({ date: key, count: totalDelta });
@@ -472,8 +524,11 @@ function flushStats() {
         if (!user.days.includes(key)) user.days.push(key);
         user.days = user.days.slice(-365);
 
+        const nextTotal = (result.adsBlocked || 0) + totalDelta;
+        adsBlockedCount = nextTotal;
+
         chrome.storage.local.set({
-            adsBlocked: adsBlockedCount,
+            adsBlocked: nextTotal,
             statsBreakdown: breakdown,
             statsHistory: history.slice(-7),
             userStats,
@@ -494,11 +549,14 @@ function incrementBlockCount(category) {
     clearTimeout(persistTimer);
     persistTimer = setTimeout(flushStats, 1500);
 
-    if (chrome.storage.session) {
-        chrome.storage.session.get(["sessionAds"], (result) => {
-            chrome.storage.session.set({ sessionAds: (result.sessionAds || 0) + 1 });
-        });
-    }
+    try {
+        if (chrome.storage.session) {
+            chrome.storage.session.get(["sessionAds"], (result) => {
+                if (chrome.runtime.lastError) return;
+                chrome.storage.session.set({ sessionAds: ((result && result.sessionAds) || 0) + 1 });
+            });
+        }
+    } catch { /* session storage chưa được cấp quyền */ }
 }
 
 initialize();

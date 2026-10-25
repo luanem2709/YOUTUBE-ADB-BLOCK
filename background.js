@@ -31,6 +31,7 @@ const DEFAULTS = {
         sponsorBlock: true,
         jumpAhead: true,
         ambientGlow: true,
+        customLogo: true,
     },
 };
 

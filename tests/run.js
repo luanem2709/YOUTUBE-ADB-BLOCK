@@ -30,6 +30,7 @@ const BROWSER_TESTS = [
     { file: "premium.html", url: "/watch?v=abc&t=premium.html" },
     { file: "features.html", url: "/watch?v=abc&t=features.html" },
     { file: "ambient.html", url: "/watch?v=abc&t=ambient.html" },
+    { file: "logo.html", url: "/tests/logo.html" },
 ];
 
 function findChrome() {
@@ -47,7 +48,7 @@ function findChrome() {
     return c.find((p) => fs.existsSync(p));
 }
 
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css", ".json": "application/json" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css", ".json": "application/json", ".png": "image/png", ".gif": "image/gif" };
 
 const server = http.createServer((req, res) => {
     const u = new URL(req.url, "http://localhost");

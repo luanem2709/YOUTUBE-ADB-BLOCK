@@ -44,6 +44,7 @@ const DEFAULT_SETTINGS = {
     sponsorBlock: true,
     jumpAhead: true,
     ambientGlow: true,
+    customLogo: true,
 };
 
 function applyPageClasses() {
@@ -52,6 +53,10 @@ function applyPageClasses() {
     const want = isEnabled && settings.hideUpsell !== false;
     if (root.classList.contains("fg-hide-upsell") !== want) {
         root.classList.toggle("fg-hide-upsell", want);
+    }
+    const logo = isEnabled && settings.customLogo !== false;
+    if (root.classList.contains("fg-logo-on") !== logo) {
+        root.classList.toggle("fg-logo-on", logo);
     }
 }
 

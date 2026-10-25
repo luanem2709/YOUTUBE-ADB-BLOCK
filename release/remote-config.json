@@ -1,11 +1,23 @@
 {
-  "version": 1,
+  "version": 2,
   "_comment": "Selector BỔ SUNG khi YouTube/Spotify đổi giao diện. Extension tải file này mỗi 6 giờ — sửa ở đây, push lên GitHub là mọi máy nhận được, không cần phát hành bản mới. Chỉ thêm selector CSS (tối đa 100 mục/danh sách, ≤200 ký tự, không chứa { } < >). Tăng 'version' mỗi lần sửa.",
   "yt": {
     "adSignals": [],
     "skipButtons": [],
     "antiAdblock": [],
-    "banners": []
+    "banners": [
+      "ytd-engagement-panel-section-list-renderer[target-id='engagement-panel-ads']",
+      "ytd-ads-engagement-panel-content-renderer",
+      "ytd-action-companion-ad-renderer",
+      "ytd-player-legacy-desktop-watch-ads-renderer",
+      "panel-ad-header-image-lockup-view-model",
+      "ad-grid-card-collection-view-model",
+      "ytd-video-masthead-ad-v3-renderer",
+      "ytd-search-pyv-renderer",
+      "ytd-promoted-video-renderer",
+      "#below #player-ads",
+      "#panels ytd-ads-engagement-panel-content-renderer"
+    ]
   },
   "spotify": {
     "adUi": [],

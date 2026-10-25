@@ -402,6 +402,30 @@ openStatsBtn.addEventListener("click", () => {
     chrome.tabs.create({ url: chrome.runtime.getURL("stats.html") });
 });
 
+const reportAdBtn = $("reportAdBtn");
+reportAdBtn.addEventListener("click", () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs?.[0];
+        if (!tab || !/youtube\.com/.test(tab.url || "")) {
+            showToast("Hãy mở tab YouTube đang có quảng cáo rồi bấm lại");
+            return;
+        }
+        chrome.tabs.sendMessage(tab.id, { type: "FG_DIAG" }, async (res) => {
+            if (chrome.runtime.lastError || !res) {
+                showToast("Không đọc được tab — tải lại trang YouTube rồi thử lại");
+                return;
+            }
+            const text = "FUNNYGAME báo lỗi QC\n" + JSON.stringify(res, null, 1);
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast("Đã chép thông tin — dán gửi cho người hỗ trợ");
+            } catch {
+                showToast("Không chép được vào clipboard");
+            }
+        });
+    });
+});
+
 resetStatsBtn.addEventListener("click", () => resetModal.classList.add("show"));
 cancelResetBtn.addEventListener("click", () => resetModal.classList.remove("show"));
 

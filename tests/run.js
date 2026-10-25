@@ -31,6 +31,7 @@ const BROWSER_TESTS = [
     { file: "features.html", url: "/watch?v=abc&t=features.html" },
     { file: "ambient.html", url: "/watch?v=abc&t=ambient.html" },
     { file: "logo.html", url: "/tests/logo.html" },
+    { file: "banner.html", url: "/tests/banner.html" },
 ];
 
 function findChrome() {

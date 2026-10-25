@@ -11,6 +11,7 @@ const statVideo = $("statVideo");
 const statBanner = $("statBanner");
 const statOverlay = $("statOverlay");
 const statAnti = $("statAnti");
+const statSpotify = $("statSpotify");
 const podiumEl = $("podium");
 const rankBoard = $("rankBoard");
 const displayName = $("displayName");
@@ -29,6 +30,23 @@ const toast = $("toast");
 let dailyGoal = 50;
 let toastTimer = null;
 let currentId = "";
+
+function todayKey() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+function getTodayCount(statsHistory, fallbackTotal) {
+    if (Array.isArray(statsHistory) && statsHistory.length > 0) {
+        const key = todayKey();
+        const entry = statsHistory.find((h) => h.date === key);
+        return entry ? (entry.count || 0) : 0;
+    }
+    return fallbackTotal || 0;
+}
 
 function showToast(msg) {
     toast.textContent = msg;
@@ -194,17 +212,19 @@ function makeAvatarNode(className, user) {
 
 function renderPersonal(result) {
     const blocked = result.adsBlocked || 0;
-    const breakdown = result.statsBreakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0 };
+    const todayBlocked = getTodayCount(result.statsHistory, blocked);
+    const breakdown = result.statsBreakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 };
     dailyGoal = result.dailyGoal || 50;
     adsBlockedCount.textContent = formatNumber(blocked);
     sessionCount.textContent = formatNumber(result.sessionAds || 0);
     timeSavedCount.textContent = formatTimeSaved(blocked);
-    progressFill.style.width = Math.min(100, (blocked / dailyGoal) * 100) + "%";
-    progressLabel.textContent = `${formatNumber(Math.min(blocked, dailyGoal))} / ${dailyGoal}`;
+    progressFill.style.width = Math.min(100, (todayBlocked / dailyGoal) * 100) + "%";
+    progressLabel.textContent = `${formatNumber(Math.min(todayBlocked, dailyGoal))} / ${dailyGoal}`;
     statVideo.textContent = formatNumber(breakdown.video || 0);
     statBanner.textContent = formatNumber(breakdown.banner || 0);
     statOverlay.textContent = formatNumber(breakdown.overlay || 0);
     statAnti.textContent = formatNumber(breakdown.antiAdblock || 0);
+    if (statSpotify) statSpotify.textContent = formatNumber(breakdown.spotify || 0);
 }
 
 function renderPodium(list) {
@@ -320,7 +340,7 @@ function previewData() {
         adsBlocked: 860,
         sessionAds: 12,
         dailyGoal: 50,
-        statsBreakdown: { video: 120, banner: 640, overlay: 70, antiAdblock: 30 },
+        statsBreakdown: { video: 120, banner: 640, overlay: 70, antiAdblock: 30, spotify: 15 },
         userStats: {
             currentId: "yt_demo",
             users: {
@@ -342,7 +362,7 @@ function loadStats() {
         podiumEl.innerHTML = '<p class="empty-copy">Hãy mở trang này từ nút trong popup của extension.</p>';
         return;
     }
-    chrome.storage.local.get(["userStats", "adsBlocked", "statsBreakdown", "dailyGoal"], (result) => {
+    chrome.storage.local.get(["userStats", "adsBlocked", "statsBreakdown", "statsHistory", "dailyGoal"], (result) => {
         if (chrome.storage.session) {
             chrome.storage.session.get(["sessionAds"], (session) => {
                 render({ ...result, sessionAds: session.sessionAds || 0 });
@@ -418,7 +438,7 @@ confirmResetBtn.addEventListener("click", () => {
 
 if (chrome?.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === "local" && (changes.userStats || changes.adsBlocked || changes.statsBreakdown || changes.dailyGoal)) {
+        if (area === "local" && (changes.userStats || changes.adsBlocked || changes.statsBreakdown || changes.statsHistory || changes.dailyGoal)) {
             loadStats();
         }
         if (area === "session" && changes.sessionAds) loadStats();

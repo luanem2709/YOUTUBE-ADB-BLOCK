@@ -827,3 +827,21 @@ body {
 .stat-val.pop {
     animation: countPop 0.35s var(--ease);
 }
+
+/* Premium: hộp chọn chất lượng */
+.fg-select {
+    flex-shrink: 0;
+    min-width: 92px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-strong);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    outline: none;
+}
+.fg-select:focus { border-color: var(--border-active); }
+.fg-select:disabled { opacity: 0.45; cursor: not-allowed; }
+.fg-select option { background: #111118; color: var(--text); }

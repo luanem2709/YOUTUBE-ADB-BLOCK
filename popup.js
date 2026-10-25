@@ -6,6 +6,13 @@ const DEFAULT_SETTINGS = {
     muteAds: true,
     fastSkip: true,
     blockSpotify: true,
+    backgroundPlay: true,
+    pipButton: true,
+    hideUpsell: true,
+    videoQuality: "auto",
+    sponsorBlock: true,
+    jumpAhead: true,
+    ambientGlow: true,
 };
 
 let dailyGoal = 50;
@@ -44,9 +51,37 @@ const settingInputs = {
     muteAds: $("muteAds"),
     fastSkip: $("fastSkip"),
     blockSpotify: $("blockSpotify"),
+    backgroundPlay: $("backgroundPlay"),
+    pipButton: $("pipButton"),
+    hideUpsell: $("hideUpsell"),
+    videoQuality: $("videoQuality"),
+    jumpAhead: $("jumpAhead"),
+    sponsorBlock: $("sponsorBlock"),
+    ambientGlow: $("ambientGlow"),
 };
 
+function isCheckbox(input) {
+    return input && input.type === "checkbox";
+}
+
 let toastTimer = null;
+
+function todayKey() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+function getTodayCount(statsHistory, fallbackTotal) {
+    if (Array.isArray(statsHistory) && statsHistory.length > 0) {
+        const key = todayKey();
+        const entry = statsHistory.find((h) => h.date === key);
+        return entry ? (entry.count || 0) : 0;
+    }
+    return fallbackTotal || 0;
+}
 
 function initTabs() {
     const dockItems = document.querySelectorAll(".dock-item");
@@ -108,10 +143,10 @@ function animateStat(el) {
     el.classList.add("pop");
 }
 
-function updateProgress(blocked) {
-    const pct = Math.min(100, (blocked / dailyGoal) * 100);
+function updateProgress(todayBlocked) {
+    const pct = Math.min(100, (todayBlocked / dailyGoal) * 100);
     progressFill.style.width = pct + "%";
-    progressLabel.textContent = `${formatNumber(Math.min(blocked, dailyGoal))} / ${dailyGoal}`;
+    progressLabel.textContent = `${formatNumber(Math.min(todayBlocked, dailyGoal))} / ${dailyGoal}`;
 }
 
 function updateBreakdown(breakdown) {
@@ -160,16 +195,19 @@ function updateMasterUI(isEnabled) {
 
 function applySettingsToUI(settings) {
     Object.keys(settingInputs).forEach((key) => {
-        if (settings[key] !== undefined && settingInputs[key]) {
-            settingInputs[key].checked = settings[key];
-        }
+        const input = settingInputs[key];
+        if (settings[key] === undefined || !input) return;
+        if (isCheckbox(input)) input.checked = !!settings[key];
+        else input.value = String(settings[key]);
     });
 }
 
 function getSettingsFromUI() {
     const settings = {};
     Object.keys(settingInputs).forEach((key) => {
-        if (settingInputs[key]) settings[key] = settingInputs[key].checked;
+        const input = settingInputs[key];
+        if (!input) return;
+        settings[key] = isCheckbox(input) ? input.checked : input.value;
     });
     return settings;
 }
@@ -199,7 +237,16 @@ function setLicenseLocked(locked, expiryLabel) {
 }
 
 async function applyLicenseGate() {
-    const state = await FunnyLicense.load();
+    let state = await FunnyLicense.load();
+    // Nâng cấp từ bản cũ: đã có key nhưng chưa có token ký số → xin token từ máy chủ, không bắt nhập lại
+    if (!state.ok && state.key && !state.hasToken) {
+        if (licenseHint) licenseHint.textContent = "Đang nâng cấp key lên chuẩn bảo mật mới...";
+        if (licenseKey) licenseKey.value = state.key;
+        const r = await FunnyLicense.recheck();
+        state = await FunnyLicense.load();
+        if (!state.ok && licenseError) licenseError.textContent = (r && r.message) || "Không nâng cấp được key. Hãy bấm Kích hoạt lại.";
+        if (licenseHint) licenseHint.textContent = "Nhập key để bật chặn quảng cáo YouTube & Spotify.";
+    }
     setLicenseLocked(!state.ok, state.label);
     chrome.runtime.sendMessage({ type: "LICENSE_SYNC" });
     if (state.ok) initPopup();
@@ -229,7 +276,7 @@ licenseKey.addEventListener("keydown", (e) => {
 
 function initPopup() {
     chrome.storage.local.get(
-        ["enabled", "adsBlocked", "settings", "dailyGoal", "statsBreakdown"],
+        ["enabled", "adsBlocked", "settings", "dailyGoal", "statsBreakdown", "statsHistory"],
         (result) => {
             const isEnabled = result.enabled !== undefined ? result.enabled : true;
             const blocked = result.adsBlocked || 0;
@@ -241,7 +288,7 @@ function initPopup() {
             updateMasterUI(isEnabled);
             adsBlockedCount.textContent = formatNumber(blocked);
             updateTimeSaved(blocked);
-            updateProgress(blocked);
+            updateProgress(getTodayCount(result.statsHistory, blocked));
             updateBreakdown(result.statsBreakdown);
         }
     );
@@ -264,7 +311,7 @@ function touchCurrentUser() {
         const user = userStats.users[id];
         if (!user) return;
         user.lastActive = Date.now();
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayKey();
         if (!Array.isArray(user.days)) user.days = [];
         if (!user.days.includes(today)) user.days.push(today);
         chrome.storage.local.set({ userStats });
@@ -297,20 +344,29 @@ chrome.storage.onChanged.addListener((changes, area) => {
             adsBlockedCount.textContent = formatNumber(count);
             animateStat(adsBlockedCount);
             updateTimeSaved(count);
-            updateProgress(count);
+            chrome.storage.local.get(["statsHistory"], (r) => {
+                updateProgress(getTodayCount(r.statsHistory, count));
+            });
+        }
+        if (changes.statsHistory) {
+            chrome.storage.local.get(["adsBlocked"], (r) => {
+                updateProgress(getTodayCount(changes.statsHistory.newValue, r.adsBlocked || 0));
+            });
         }
         if (changes.statsBreakdown) {
             updateBreakdown(changes.statsBreakdown.newValue);
         }
         if (changes.dailyGoal) {
             dailyGoal = changes.dailyGoal.newValue || 50;
-            chrome.storage.local.get(["adsBlocked"], (r) => updateProgress(r.adsBlocked || 0));
+            chrome.storage.local.get(["adsBlocked", "statsHistory"], (r) => {
+                updateProgress(getTodayCount(r.statsHistory, r.adsBlocked || 0));
+            });
         }
         if (changes.enabled) {
             enableToggle.checked = changes.enabled.newValue;
             updateMasterUI(changes.enabled.newValue);
         }
-        if (changes.licenseValid || changes.licenseExpires) {
+        if (changes.licenseToken || changes.licenseSig || changes.licenseKey) {
             FunnyLicense.load().then((state) => {
                 setLicenseLocked(!state.ok, state.label);
             });

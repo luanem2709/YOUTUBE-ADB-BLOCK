@@ -121,3 +121,31 @@ html.fg-ambient-on #cinematics,
 html.fg-ambient-on #cinematics-container {
     display: none !important;
 }
+
+/* Logo FUNNYGAME thay biểu tượng nút Play đỏ của YouTube (bật bằng html.fg-logo-on).
+   Chỉ ẩn phần nút đỏ, giữ nguyên chữ "YouTube". Lớp ::after có nền trùng màu thanh tiêu đề
+   nên vẫn che kín nút đỏ kể cả khi YouTube đổi mã màu. */
+html.fg-logo-on ytd-topbar-logo-renderer #logo-icon svg path[fill^="#FF00" i],
+html.fg-logo-on ytd-topbar-logo-renderer #logo-icon svg path[fill^="#FF00" i] + path,
+html.fg-logo-on ytd-topbar-logo-renderer #logo-icon svg path[fill="red" i],
+html.fg-logo-on ytd-topbar-logo-renderer #logo-icon svg path[fill="red" i] + path {
+    opacity: 0 !important;
+}
+html.fg-logo-on ytd-topbar-logo-renderer #logo-icon {
+    position: relative !important;
+    overflow: visible !important;
+}
+html.fg-logo-on ytd-topbar-logo-renderer #logo-icon::after {
+    content: "";
+    position: absolute;
+    left: -3px;
+    top: 50%;
+    width: 32px;
+    height: 32px;
+    transform: translateY(-50%);
+    z-index: 1;
+    pointer-events: none;
+    background: url("chrome-extension://__MSG_@@extension_id__/images/fg-logo-yt.png") center / contain no-repeat,
+                var(--yt-spec-base-background, #0f0f0f);
+    border-radius: 7px;
+}

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html dark><head><meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #0f0f0f; color: #fff; font-family: Roboto, Arial, sans-serif; }
+  #masthead { height: 56px; display: flex; align-items: center; padding: 0 16px; gap: 16px; }
+  #logo-icon { display: inline-block; width: 93px; height: 20px; }
+  #country { font-size: 10px; color: #aaa; margin-left: 2px; align-self: flex-start; margin-top: 14px; }
+</style>
+<link rel="stylesheet" href="/content.css">
+<style>
+  /* Trong trang test không có chrome-extension:// → trỏ ảnh về file trong repo để xem trực quan */
+  html.fg-logo-on ytd-topbar-logo-renderer #logo-icon::after { background-image: url(/images/fg-logo-yt.png); }
+</style>
+</head>
+<body>
+<div id="masthead">
+  <span style="font-size:22px">&#9776;</span>
+  <ytd-topbar-logo-renderer style="display:flex;align-items:center">
+    <a id="logo" href="#" style="display:flex;align-items:center">
+      <yt-icon id="logo-icon"><span><div style="width:100%;height:100%">
+        <svg viewBox="0 0 93 20" width="93" height="20" style="display:block">
+          <g><path id="red" d="M14.48 20s9.08 0 11.34-.6a3.62 3.62 0 0 0 2.56-2.6c.62-2.3.62-6.8.62-6.8s0-4.5-.62-6.8A3.62 3.62 0 0 0 25.82.6C23.56 0 14.48 0 14.48 0S5.4 0 3.15.6A3.62 3.62 0 0 0 .6 3.2C0 5.5 0 10 0 10s0 4.5.6 6.8a3.62 3.62 0 0 0 2.55 2.6c2.25.6 11.33.6 11.33.6z" fill="#FF0033"/>
+             <path id="tri" d="M19 10l-7.5-4.25v8.5L19 10z" fill="white"/></g>
+          <g><text id="word" x="33" y="16" font-size="17" font-weight="700" fill="white" font-family="Arial">YouTube</text></g>
+        </svg>
+      </div></span></yt-icon>
+    </a>
+    <span id="country">VN</span>
+  </ytd-topbar-logo-renderer>
+</div>
+<pre id="out">RUNNING</pre>
+<script>
+const R = [];
+const check = (n, c, x) => R.push((c ? "PASS " : "FAIL ") + n + (x ? "  [" + x + "]" : ""));
+const op = (id) => getComputedStyle(document.getElementById(id)).opacity;
+const after = () => getComputedStyle(document.getElementById("logo-icon"), "::after");
+
+check("G1 chua bat -> giu nguyen logo YouTube", op("red") === "1" && after().content === "none");
+document.documentElement.classList.add("fg-logo-on");
+check("G2 bat -> an nut Play do", op("red") === "0" && op("tri") === "0");
+check("G3 van giu chu 'YouTube'", op("word") === "1");
+const a = after();
+check("G4 hien logo FUNNYGAME", a.content !== "none" && /fg-logo-yt\.png/.test(a.backgroundImage), a.backgroundImage.slice(0, 60));
+const red = document.getElementById("red").getBoundingClientRect();
+const icon = document.getElementById("logo-icon").getBoundingClientRect();
+const L = icon.left - 3, T = icon.top + icon.height / 2 - 16;
+check("G5 logo che kin vung nut Play do", L <= red.left && L + 32 >= red.right && T <= red.top && T + 32 >= red.bottom,
+  `logo ${Math.round(L)},${Math.round(T)} 32x32 | red ${Math.round(red.left)},${Math.round(red.top)} ${Math.round(red.width)}x${Math.round(red.height)}`);
+check("G6 logo khong chan bam (van bam vao ve trang chu duoc)", a.pointerEvents === "none");
+document.getElementById("out").textContent = R.join("\n");
+</script>
+</body></html>

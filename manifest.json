@@ -117,5 +117,15 @@
         ]
       }
     }
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "images/fg-logo-yt.png"
+      ],
+      "matches": [
+        "*://*.youtube.com/*"
+      ]
+    }
+  ]
 }

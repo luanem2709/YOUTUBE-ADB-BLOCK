@@ -39,6 +39,7 @@
         'iframe[src*="doubleclick"]',
         'iframe[src*="googlesyndication"]',
     ];
+    let AD_UI_SELECTOR_STR = AD_UI_SELECTORS.join(",");
 
     const SKIP_AD_SELECTORS = [
         '[data-testid="skip-ad-button"]',
@@ -48,6 +49,27 @@
         'button[aria-label*="Bỏ qua quảng cáo" i]',
         'button[aria-label*="Skip" i][aria-label*="ad" i]',
     ];
+    let SKIP_AD_SELECTOR_STR = SKIP_AD_SELECTORS.join(",");
+
+    function cleanSelectors(list) {
+        if (!Array.isArray(list)) return [];
+        const out = [];
+        for (const raw of list.slice(0, 100)) {
+            const sel = String(raw || "").trim();
+            if (!sel || sel.length > 200 || /[{}<>]/.test(sel)) continue;
+            try { document.createDocumentFragment().querySelector(sel); } catch { continue; }
+            out.push(sel);
+        }
+        return out;
+    }
+
+    function applyRemoteConfig(cfg) {
+        const sp = cfg && typeof cfg === "object" && cfg.spotify && typeof cfg.spotify === "object" ? cfg.spotify : {};
+        const ui = cleanSelectors(sp.adUi).filter((x) => !AD_UI_SELECTORS.includes(x));
+        const skip = cleanSelectors(sp.skipButtons).filter((x) => !SKIP_AD_SELECTORS.includes(x));
+        AD_UI_SELECTOR_STR = AD_UI_SELECTORS.concat(ui).join(",");
+        SKIP_AD_SELECTOR_STR = SKIP_AD_SELECTORS.concat(skip).join(",");
+    }
 
     let mutedByUs = false;
     let ratedByUs = false;
@@ -56,8 +78,27 @@
     let skippedForwardThisAd = false;
     let adActive = false;
 
+    let cachedBar = null;
+    let cachedWidget = null;
+
+    function getNowPlayingBar() {
+        if (cachedBar && cachedBar.isConnected) return cachedBar;
+        cachedBar = document.querySelector('[data-testid="now-playing-bar"]');
+        return cachedBar;
+    }
+
+    function getNowPlayingWidget() {
+        if (cachedWidget && cachedWidget.isConnected) return cachedWidget;
+        cachedWidget = document.querySelector('[data-testid="now-playing-widget"]');
+        return cachedWidget;
+    }
+
     function postLicense() {
-        try { window.postMessage({ type: "FG_SPOTIFY_LICENSE", ok: isEnabled && blockSpotify }, "*"); }
+        const ok = isEnabled && blockSpotify;
+        try {
+            sessionStorage.setItem("__fg_sp_lic", ok ? "1" : "0");
+        } catch { /* ignore */ }
+        try { window.postMessage({ type: "FG_SPOTIFY_LICENSE", ok }, "*"); }
         catch { /* ignore */ }
     }
 
@@ -73,28 +114,19 @@
         catch { /* ignore */ }
     }
 
-    function licenseAllows(result) {
-        if (result.licenseValid !== true) return false;
-        const raw = result.licenseExpires;
-        if (!raw) return false;
-        const text = String(raw).trim();
-        let day = null;
-        let m = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (m) day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-        else {
-            m = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
-            if (m) day = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    async function licenseAllows(result) {
+        try {
+            return (await FunnyLicense.verifyStored(result)).ok;
+        } catch {
+            return false;
         }
-        if (!day || Number.isNaN(day.getTime())) return false;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return day >= today;
     }
 
     function loadSettings(cb) {
         try {
-            chrome.storage.local.get(["enabled", "settings", "licenseValid", "licenseExpires"], (result) => {
-                isEnabled = (result.enabled !== false) && licenseAllows(result);
+            chrome.storage.local.get(["enabled", "settings", "remoteConfig", "licenseKey", "licenseToken", "licenseSig"], async (result) => {
+                applyRemoteConfig(result.remoteConfig);
+                isEnabled = (result.enabled !== false) && await licenseAllows(result);
                 blockSpotify = result.settings?.blockSpotify !== false;
                 adsBlockedCount = 0;
                 postLicense();
@@ -113,7 +145,7 @@
         try {
             chrome.storage.onChanged.addListener((changes, area) => {
                 if (area !== "local") return;
-                if (changes.enabled || changes.licenseValid || changes.licenseExpires || changes.settings) {
+                if (changes.enabled || changes.licenseToken || changes.licenseSig || changes.licenseKey || changes.settings || changes.remoteConfig) {
                     loadSettings();
                 }
             });
@@ -121,7 +153,8 @@
     }
 
     function isPlaybackActive() {
-        const btn = document.querySelector('[data-testid="control-button-playpause"]');
+        const bar = getNowPlayingBar() || document;
+        const btn = bar.querySelector('[data-testid="control-button-playpause"]');
         if (!btn) return true;
         const label = (btn.getAttribute("aria-label") || "").toLowerCase();
         return label.includes("pause") || label.includes("tạm dừng") || label.includes("tam dung");
@@ -137,7 +170,7 @@
 
     function widgetLooksLikeAd(widget) {
         const label = (widget.getAttribute("aria-label") || "").toLowerCase();
-        const text = (widget.innerText || "").toLowerCase();
+        const text = (widget.textContent || "").toLowerCase();
         const blob = label + " " + text;
         if (AD_LABELS.some((k) => blob.includes(k))) return true;
         if (AD_BREAK_PHRASES.some((k) => blob.includes(k))) return true;
@@ -150,13 +183,28 @@
         return false;
     }
 
+    function hasBox(el) {
+        return !!el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0);
+    }
+
+    // Chỉ xét trong thanh "đang phát" — banner QC tĩnh ở trang chủ/sidebar KHÔNG có nghĩa bài đang phát là QC
     function pageHasAdBreak() {
-        const bar = document.querySelector('[data-testid="now-playing-bar"]');
-        const main = document.querySelector('[data-testid="main"]') || document.querySelector("#main") || document.body;
-        const text = ((bar && bar.innerText) || "") + "\n" + ((main && main.innerText) || "");
-        const blob = text.toLowerCase();
-        if (AD_BREAK_PHRASES.some((k) => blob.includes(k))) return true;
-        if (document.querySelector(AD_UI_SELECTORS.join(","))) return true;
+        const bar = getNowPlayingBar();
+        if (bar) {
+            const uiAds = bar.querySelectorAll(AD_UI_SELECTOR_STR);
+            for (let i = 0; i < uiAds.length; i++) {
+                if (hasBox(uiAds[i])) return true;
+            }
+            const barText = (bar.textContent || "").toLowerCase();
+            if (AD_BREAK_PHRASES.some((k) => barText.includes(k))) return true;
+        }
+        if (shortAdMediaPlaying()) {
+            const main = document.querySelector('[data-testid="now-playing-view"], [data-testid="fullscreen-mode-container"]');
+            if (main) {
+                const mainText = (main.textContent || "").toLowerCase();
+                if (AD_BREAK_PHRASES.some((k) => mainText.includes(k))) return true;
+            }
+        }
         return false;
     }
 
@@ -172,17 +220,19 @@
     }
 
     function isAdPlaying() {
-        if (document.querySelector(SKIP_AD_SELECTORS.join(","))) return true;
-        if (pageHasAdBreak()) return true;
+        const skipBtn = document.querySelector(SKIP_AD_SELECTOR_STR);
+        if (skipBtn && hasBox(skipBtn)) return true;
         if (mediaSessionLooksLikeAd()) return true;
 
-        const widget = document.querySelector('[data-testid="now-playing-widget"]');
+        const widget = getNowPlayingWidget();
         if (widget && widgetLooksLikeAd(widget)) return true;
+
+        if (pageHasAdBreak()) return true;
 
         const title = (document.title || "").toLowerCase();
         if (AD_LABELS.some((k) => title.includes(k))) return true;
 
-        const link = document.querySelector('a[data-testid="context-item-link"]');
+        const link = (widget || document).querySelector('a[data-testid="context-item-link"]');
         if (link) {
             const href = (link.getAttribute("href") || "").toLowerCase();
             if (href.includes("spotify:ad:") || href.includes("/ad/") || href.includes("advertis")) return true;
@@ -191,22 +241,21 @@
     }
 
     function mediaElements() {
-        return Array.from(document.querySelectorAll("video, audio"));
+        return document.querySelectorAll("video, audio");
     }
 
     function trySkipAd() {
         const now = Date.now();
         if (now - lastSkipAt < 1200) return false;
-        for (const selector of SKIP_AD_SELECTORS) {
-            const btn = document.querySelector(selector);
-            if (btn && btn.offsetParent !== null) {
-                lastSkipAt = now;
-                btn.click();
-                return true;
-            }
+        const btn = document.querySelector(SKIP_AD_SELECTOR_STR);
+        if (btn && btn.offsetParent !== null) {
+            lastSkipAt = now;
+            btn.click();
+            return true;
         }
         if (skippedForwardThisAd) return false;
-        const next = document.querySelector('[data-testid="control-button-skip-forward"]');
+        const bar = getNowPlayingBar() || document;
+        const next = bar.querySelector('[data-testid="control-button-skip-forward"]');
         if (next && next.offsetParent !== null) {
             lastSkipAt = now;
             skippedForwardThisAd = true;
@@ -226,7 +275,8 @@
         setTabMuted(true);
         trySkipAd();
         const media = mediaElements();
-        for (const m of media) {
+        for (let i = 0; i < media.length; i++) {
+            const m = media[i];
             if (!m.muted) { m.muted = true; mutedByUs = true; }
             if (m.playbackRate !== 16) { m.playbackRate = 16; ratedByUs = true; }
             try {
@@ -242,7 +292,9 @@
         skippedForwardThisAd = false;
         postAdState(false);
         setTabMuted(false);
-        for (const m of mediaElements()) {
+        const media = mediaElements();
+        for (let i = 0; i < media.length; i++) {
+            const m = media[i];
             if (ratedByUs && m.playbackRate === 16) m.playbackRate = 1;
             if (mutedByUs && m.muted) m.muted = false;
         }
@@ -251,17 +303,21 @@
     }
 
     function hideAdUI() {
-        for (const selector of AD_UI_SELECTORS) {
-            document.querySelectorAll(selector).forEach((el) => {
-                el.style.setProperty("display", "none", "important");
-            });
+        const nodes = document.querySelectorAll(AD_UI_SELECTOR_STR);
+        for (let i = 0; i < nodes.length; i++) {
+            nodes[i].style.setProperty("display", "none", "important");
         }
     }
 
+    let lastLicensePostAt = 0;
     function tick() {
         if (!isEnabled || !blockSpotify) {
             if (adActive) { restorePlayback(); adActive = false; }
-            postLicense();
+            const now = Date.now();
+            if (now - lastLicensePostAt > 2000) {
+                lastLicensePostAt = now;
+                postLicense();
+            }
             return;
         }
         const ad = isAdPlaying();
@@ -288,7 +344,11 @@
     }, true);
 
     function todayKey() {
-        return new Date().toISOString().slice(0, 10);
+        const d = new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
     }
 
     let persistTimer = null;
@@ -302,7 +362,8 @@
         try {
             if (chrome.storage.session) {
                 chrome.storage.session.get(["sessionAds"], (r) => {
-                    chrome.storage.session.set({ sessionAds: (r.sessionAds || 0) + 1 });
+                    if (chrome.runtime.lastError) return;
+                    chrome.storage.session.set({ sessionAds: ((r && r.sessionAds) || 0) + 1 });
                 });
             }
         } catch { /* ignore */ }
@@ -332,22 +393,40 @@
         } catch { /* ignore */ }
     }
 
-    function start() {
-        watchSettings();
-        postLicense();
-        setInterval(tick, 200);
-        const observer = new MutationObserver(() => tick());
-        const root = document.querySelector('[data-testid="now-playing-bar"]') || document.body;
-        observer.observe(root, {
+    let observer = null;
+    let debounceTimer = null;
+
+    function attachObserver() {
+        const bar = getNowPlayingBar();
+        const target = bar || document.body;
+        if (!target) return;
+        if (observer && observer.__fgTarget === target) return;
+        if (observer) {
+            observer.disconnect();
+            observer = null;
+        }
+        observer = new MutationObserver(() => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(tick, 80);
+        });
+        observer.__fgTarget = target;
+        observer.observe(target, {
             childList: true,
             subtree: true,
-            characterData: true,
+            characterData: !!bar,
             attributes: true,
             attributeFilter: ["aria-label", "href", "title"],
         });
-        if (root !== document.body) {
-            observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-        }
+    }
+
+    function start() {
+        watchSettings();
+        postLicense();
+        setInterval(() => {
+            if (!cachedBar || !cachedBar.isConnected) attachObserver();
+            tick();
+        }, 300);
+        attachObserver();
     }
 
     loadSettings(start);

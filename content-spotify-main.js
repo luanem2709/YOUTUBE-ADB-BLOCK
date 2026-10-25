@@ -1,6 +1,10 @@
 // FUNNYGAME — MAIN world: chặn QC Spotify trước khi player đọc
 (function () {
     let allowLicense = false;
+    try {
+        allowLicense = sessionStorage.getItem("__fg_sp_lic") === "1";
+    } catch { /* ignore */ }
+
     let adActive = false;
     let authHeader = "";
     let skipLock = 0;
@@ -14,6 +18,9 @@
         if (!msg || typeof msg !== "object") return;
         if (msg.type === "FG_SPOTIFY_LICENSE") {
             allowLicense = !!msg.ok;
+            try {
+                sessionStorage.setItem("__fg_sp_lic", allowLicense ? "1" : "0");
+            } catch { /* ignore */ }
             if (!allowLicense) setAdActive(false);
             return;
         }
@@ -23,16 +30,30 @@
         }
     });
 
+    function pruneMediaEls() {
+        if (mediaEls.size <= 8) return;
+        for (const m of mediaEls) {
+            if (!m || (!m.isConnected && m.paused && m.readyState === 0)) {
+                mediaEls.delete(m);
+            }
+        }
+    }
+
     function setAdActive(on) {
         if (on !== adActive) didSkipCmd = false;
         adActive = on;
         window.__fgSpotifyAd = on;
-        for (const m of [...mediaEls]) {
+        pruneMediaEls();
+        for (const m of mediaEls) {
             if (!m) continue;
             applyMedia(m);
         }
-        for (const ctx of [...audioCtxs]) {
+        for (const ctx of audioCtxs) {
             try {
+                if (ctx.state === "closed") {
+                    audioCtxs.delete(ctx);
+                    continue;
+                }
                 for (const src of ctx.__fgSources || []) {
                     if (src && src.playbackRate) src.playbackRate.value = on ? 16 : 1;
                 }
@@ -180,6 +201,7 @@
 
     function registerMedia(m) {
         if (!m || mediaEls.has(m)) return;
+        pruneMediaEls();
         mediaEls.add(m);
         applyMedia(m);
     }
@@ -202,12 +224,15 @@
         const Wrapped = function (...args) {
             const ctx = new origAC(...args);
             audioCtxs.add(ctx);
-            ctx.__fgSources = [];
+            ctx.__fgSources = new Set();
             try {
                 const origBuf = ctx.createBufferSource.bind(ctx);
                 ctx.createBufferSource = function () {
                     const src = origBuf();
-                    ctx.__fgSources.push(src);
+                    ctx.__fgSources.add(src);
+                    src.addEventListener("ended", () => {
+                        ctx.__fgSources.delete(src);
+                    }, { once: true });
                     if (adActive && src.playbackRate) {
                         try { src.playbackRate.value = 16; } catch { /* ignore */ }
                     }
@@ -244,7 +269,7 @@
 
     function skipCurrentAd() {
         if (!allowLicense || !adActive) return;
-        for (const m of [...mediaEls]) applyMedia(m);
+        for (const m of mediaEls) applyMedia(m);
         if (didSkipCmd) return;
         const now = Date.now();
         if (now - skipLock < 1200) return;
@@ -265,6 +290,9 @@
 
     function patchWsData(raw) {
         if (typeof raw !== "string" || raw[0] !== "{") return raw;
+        if (!raw.includes("spotify:ad:") && !raw.includes("spotify:interruption:") && !raw.includes("is_advertisement") && !raw.includes("\"ad\"")) {
+            return raw;
+        }
         let data;
         try { data = JSON.parse(raw); } catch { return raw; }
         if (!data || typeof data !== "object") return raw;

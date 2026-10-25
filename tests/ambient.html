@@ -51,12 +51,14 @@ function pixel() {
   lic({ ambientGlow: true, pipButton: false, jumpAhead: false, sponsorBlock: false });
   await sleep(1500);
   const c = amb();
-  check("A1 tao canvas anh sang nen trong #primary-inner", !!c && c.parentElement.id === "primary-inner");
-  check("A2 nam SAU noi dung (z-index -1, host isolate)", c && getComputedStyle(c).zIndex === "-1" && getComputedStyle(c.parentElement).isolation === "isolate");
+  check("A1 gan vao <body>, KHONG chen vao cay DOM cua YouTube", !!c && c.parentElement === document.body);
+  const pi = document.getElementById("primary-inner");
+  check("A2 khong sua style phan tu cua YouTube", pi.getAttribute("style") === null && !document.querySelector(".fg-ambient-host"));
+  check("A2b hoa tron 'screen' (chu trang van trang)", c && getComputedStyle(c).mixBlendMode === "screen");
   const pr = document.getElementById("movie_player").getBoundingClientRect();
   const cr = c ? c.getBoundingClientRect() : {};
-  check("A3 toa xuong phia duoi trinh phat (~40%)", cr.bottom > pr.bottom + pr.height * 0.3 && cr.top <= pr.top + 1, `player ${Math.round(pr.top)}-${Math.round(pr.bottom)} glow ${Math.round(cr.top)}-${Math.round(cr.bottom)}`);
-  check("A4b nam gon trong cot trinh phat (khong de cot de xuat / thanh tren)", cr.left >= pr.left - 1 && cr.right <= pr.right + 1);
+  check("A3 toa xuong phia duoi trinh phat, KHONG de len video", cr.top >= pr.bottom - 1 && cr.bottom > pr.bottom + pr.height * 0.3, `player ${Math.round(pr.top)}-${Math.round(pr.bottom)} glow ${Math.round(cr.top)}-${Math.round(cr.bottom)}`);
+  check("A4b chi rong hon trinh phat toi da 4% moi ben", cr.left >= pr.left - pr.width * 0.041 && cr.right <= pr.right + pr.width * 0.041);
   check("A4 khong vuot qua mep man hinh (khong thanh cuon ngang)", cr.left >= 0 && cr.right <= document.documentElement.clientWidth + 0.5 && document.documentElement.scrollWidth <= document.documentElement.clientWidth);
   check("A5 khong chan chuot (pointer-events none)", c && getComputedStyle(c).pointerEvents === "none");
   let px = pixel();
@@ -69,7 +71,7 @@ function pixel() {
 
   const d0 = draws;
   await sleep(1000);
-  const perSec = (draws - d0) / 2; // mỗi khung vẽ 2 lần: hình chính + phản chiếu
+  const perSec = draws - d0;
   check("A8 tan suat ve ~10 khung/giay (tiet kiem CPU)", perSec >= 7 && perSec <= 13, `${perSec}/s`);
 
   v.pause();
@@ -89,7 +91,7 @@ function pixel() {
   // Tắt tính năng
   lic({ ambientGlow: false, pipButton: false, jumpAhead: false, sponsorBlock: false });
   await sleep(600);
-  check("A13 tat tinh nang -> go sach (canvas + class host)", !amb() && !document.querySelector(".fg-ambient-host"));
+  check("A13 tat tinh nang -> go sach", !amb());
   lic({ ambientGlow: true, pipButton: false, jumpAhead: false, sponsorBlock: false });
   await sleep(600);
   check("A14 bat lai -> hien lai", !!amb());

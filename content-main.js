@@ -917,18 +917,18 @@
     }, true);
 
     // ---------- HIỆU ỨNG ÁNH SÁNG NỀN (Ambient glow) ----------
-    // Lấy màu khung hình hiện tại → canvas rất nhỏ (48×27) → CSS làm nhoè, toả ra quanh và PHÍA DƯỚI trình phát.
-    // Hiệu năng: vẽ 10 khung/giây, làm mượt bằng cộng dồn khung (globalAlpha), DỪNG khi video tạm dừng / tab ẩn.
-    const AMB_W = 48, AMB_H = 44;
-    const AMB_VX = 0, AMB_VY = 0, AMB_VW = 48, AMB_VH = 27, AMB_RH = 17;
-    let amb = { canvas: null, ctx: null, host: null, player: null, timer: null, ro: null, drew: false, hostPrev: null };
+    // Màu khung hình toả mờ PHÍA DƯỚI trình phát (như đèn hắt).
+    // KHÔNG chèn vào cây DOM của YouTube (chèn vào đó từng làm hỏng trình phát):
+    // canvas riêng gắn vào <body>, đặt ngay dưới mép trình phát, hoà trộn "screen" → chữ trắng vẫn trắng, nền tối sáng màu lên.
+    // Hiệu năng: canvas 48×27, 10 khung/giây, dừng hẳn khi video tạm dừng / tab ẩn.
+    const AMB_W = 48, AMB_H = 27;
+    let amb = { canvas: null, ctx: null, player: null, timer: null, ro: null, drew: false };
 
-    // Style đặt trực tiếp (không phụ thuộc content.css) — nếu CSS chưa nạp, canvas cũng KHÔNG đẩy lệch bố cục
     const AMB_STYLE = {
-        position: "absolute", zIndex: "-1", pointerEvents: "none", display: "block",
-        filter: "blur(44px) saturate(1.7) brightness(1.1)", opacity: "0.7", transform: "translateZ(0)",
-        webkitMaskImage: "linear-gradient(to right, transparent 0%, #000 12%, #000 88%, transparent 100%), linear-gradient(to bottom, #000 0%, #000 50%, transparent 100%)",
-        maskImage: "linear-gradient(to right, transparent 0%, #000 12%, #000 88%, transparent 100%), linear-gradient(to bottom, #000 0%, #000 50%, transparent 100%)",
+        position: "absolute", zIndex: "1", pointerEvents: "none", display: "block", margin: "0",
+        mixBlendMode: "screen", filter: "blur(40px) saturate(1.8) brightness(1.15)", opacity: "0.55",
+        webkitMaskImage: "linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%), linear-gradient(to bottom, #000 0%, rgba(0,0,0,0.6) 35%, transparent 100%)",
+        maskImage: "linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%), linear-gradient(to bottom, #000 0%, rgba(0,0,0,0.6) 35%, transparent 100%)",
         webkitMaskComposite: "source-in",
         maskComposite: "intersect",
     };
@@ -941,44 +941,36 @@
     }
 
     function ambientWanted() {
-        return allowLicense && fgSettings.ambientGlow !== false && isWatchPage() &&
+        return allowLicense && fgSettings.ambientGlow !== false && isWatchPage() && !!document.body &&
             document.documentElement.hasAttribute("dark") && !document.fullscreenElement && !nativeCinematicsOn();
-    }
-
-    function ambientHost(player) {
-        return player.closest("#player-full-bleed-container, #full-bleed-container, #primary-inner, #primary") || player.parentElement;
     }
 
     function teardownAmbient() {
         if (amb.timer) clearInterval(amb.timer);
         if (amb.ro) amb.ro.disconnect();
         if (amb.canvas) amb.canvas.remove();
-        if (amb.host) {
-            amb.host.classList.remove("fg-ambient-host");
-            if (amb.hostPrev) {
-                amb.host.style.position = amb.hostPrev.position;
-                amb.host.style.isolation = amb.hostPrev.isolation;
-            }
-        }
-        amb = { canvas: null, ctx: null, host: null, player: null, timer: null, ro: null, drew: false, hostPrev: null };
+        amb = { canvas: null, ctx: null, player: null, timer: null, ro: null, drew: false };
     }
 
     function layoutAmbient() {
-        if (!amb.canvas || !amb.player || !amb.host) return;
+        if (!amb.canvas || !amb.player) return;
         const pr = amb.player.getBoundingClientRect();
-        const hr = amb.host.getBoundingClientRect();
-        if (pr.width < 50 || pr.height < 30) return;
-        const vw = document.documentElement.clientWidth || window.innerWidth;
-        // Nằm gọn trong cột chứa trình phát: bắt đầu từ mép trên trình phát (phần sau trình phát bị che),
-        // phần lộ ra là vùng PHÍA DƯỚI — sau tiêu đề / mô tả
-        const left = Math.max(pr.left, hr.left, 0);
-        const right = Math.min(pr.right, hr.right, vw);
         const st = amb.canvas.style;
+        if (pr.width < 50 || pr.height < 30) {
+            if (st.visibility !== "hidden") st.visibility = "hidden";
+            return;
+        }
+        const vw = document.documentElement.clientWidth || window.innerWidth;
+        const sx = window.scrollX || 0, sy = window.scrollY || 0;
+        const left = Math.max(pr.left - pr.width * 0.04, 0);
+        const right = Math.min(pr.right + pr.width * 0.04, vw);
+        // Toạ độ theo tài liệu → tự cuộn theo trang, không cần nghe sự kiện cuộn
         const next = {
-            left: (left - hr.left) + "px",
-            top: (pr.top - hr.top) + "px",
+            left: (left + sx) + "px",
+            top: (pr.bottom + sy) + "px",       // bắt đầu ĐÚNG mép dưới trình phát → không đè lên video
             width: Math.max(0, right - left) + "px",
-            height: (pr.height * AMB_H / AMB_VH) + "px",
+            height: (pr.height * 0.62) + "px",
+            visibility: "visible",
         };
         for (const k in next) if (st[k] !== next[k]) st[k] = next[k];
     }
@@ -988,11 +980,10 @@
         const ctx = amb.ctx;
         if (!ctx || !video || video.readyState < 2) return;
         try {
+            // Lật dọc: mép dưới khung hình nằm sát mép dưới trình phát, như phản chiếu
             ctx.globalAlpha = alpha;
-            ctx.drawImage(video, AMB_VX, AMB_VY, AMB_VW, AMB_VH);
-            // Phản chiếu lật ngược phía dưới (ánh đèn hắt xuống)
-            ctx.setTransform(1, 0, 0, -1, 0, 2 * (AMB_VY + AMB_VH));
-            ctx.drawImage(video, AMB_VX, AMB_VY + AMB_VH - AMB_RH, AMB_VW, AMB_RH);
+            ctx.setTransform(1, 0, 0, -1, 0, AMB_H);
+            ctx.drawImage(video, 0, 0, AMB_W, AMB_H);
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             amb.drew = true;
         } catch {
@@ -1004,8 +995,7 @@
         if (!ambientWanted()) { if (amb.canvas) teardownAmbient(); return; }
         const player = mainPlayer();
         if (!player) { if (amb.canvas) teardownAmbient(); return; }
-        const host = ambientHost(player);
-        if (amb.canvas && (amb.host !== host || amb.player !== player || !amb.canvas.isConnected)) teardownAmbient();
+        if (amb.canvas && (amb.player !== player || !amb.canvas.isConnected)) teardownAmbient();
 
         if (!amb.canvas) {
             const canvas = document.createElement("canvas");
@@ -1014,17 +1004,12 @@
             canvas.height = AMB_H;
             canvas.setAttribute("aria-hidden", "true");
             Object.assign(canvas.style, AMB_STYLE);
-            const hostPrev = { position: host.style.position, isolation: host.style.isolation };
-            if (window.getComputedStyle(host).position === "static") host.style.position = "relative";
-            host.style.isolation = "isolate"; // lớp sáng nằm sau chữ & trình phát nhưng trên nền trang
-            host.classList.add("fg-ambient-host");
-            host.insertBefore(canvas, host.firstChild);
-            amb = { canvas, ctx: canvas.getContext("2d", { alpha: false }), host, player, timer: null, ro: null, drew: false, hostPrev };
+            document.body.appendChild(canvas);
+            amb = { canvas, ctx: canvas.getContext("2d", { alpha: false }), player, timer: null, ro: null, drew: false };
             if (amb.ctx) { amb.ctx.fillStyle = "#000"; amb.ctx.fillRect(0, 0, AMB_W, AMB_H); }
             try {
                 amb.ro = new ResizeObserver(layoutAmbient);
                 amb.ro.observe(player);
-                amb.ro.observe(host);
             } catch { /* trình duyệt cũ: vòng quét 300ms vẫn tự căn lại */ }
         }
         layoutAmbient();
@@ -1036,6 +1021,7 @@
         if (!playing && amb.timer) { clearInterval(amb.timer); amb.timer = null; } // giữ khung cuối, không tốn CPU
     }
 
+    window.addEventListener("resize", () => layoutAmbient(), { passive: true });
     document.addEventListener("fullscreenchange", () => ensureAmbient());
 
     // Cho bộ test truy cập hàm thuần (không ảnh hưởng hoạt động)

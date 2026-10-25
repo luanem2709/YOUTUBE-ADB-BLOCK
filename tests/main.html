@@ -174,6 +174,28 @@ function addBadge(p) { const b = document.createElement("div"); b.className = "y
   check("16 class sot sau QC -> van khoi phuc, khong tua", v.playbackRate === 1 && !v.muted && v.currentTime === 10, `rate=${v.playbackRate} muted=${v.muted} t=${v.currentTime}`);
   mp.classList.remove("ad-showing");
 
+  // 17. Màn hình cuối QC kiểu mới (tên class lạ, nút "Bỏ qua" tên lạ)
+  let endSkip = 0, wrongClick = 0;
+  const chapterSkip = document.createElement("button"); chapterSkip.className = "ytp-chapter-skip"; chapterSkip.textContent = "Bỏ qua"; chapterSkip.style.cssText = "width:60px;height:24px"; chapterSkip.onclick = () => wrongClick++;
+  mp.appendChild(chapterSkip); // nút "Bỏ qua" KHÔNG thuộc vùng QC
+  await sleep(500);
+  check("17a nut 'Bo qua' ngoai vung QC, khong co QC -> khong bam", wrongClick === 0);
+  const endcap = document.createElement("div"); endcap.className = "ytp-ad-endcap-layout-2027"; endcap.style.cssText = "width:400px;height:200px";
+  const cta = document.createElement("div"); cta.textContent = "Chạy quảng cáo TikTok ngay"; endcap.appendChild(cta);
+  const nb = document.createElement("button"); nb.className = "ytp-new-btn-xyz"; nb.innerHTML = "Bỏ qua <span>▶</span>"; nb.style.cssText = "width:80px;height:30px"; nb.onclick = () => endSkip++;
+  endcap.appendChild(nb);
+  mp.querySelector(".video-ads").appendChild(endcap);
+  v.duration = 20; v.currentTime = 1;
+  mp.classList.add("ad-showing");
+  await sleep(600);
+  check("17b man hinh cuoi QC kieu moi -> nhan dien la QC", v.playbackRate === 16 || endSkip > 0, `rate=${v.playbackRate} skip=${endSkip}`);
+  check("17c bam nut 'Bo qua' ten moi trong vung QC", endSkip > 0, `clicked=${endSkip}`);
+  check("17d khong bam nham nut 'Bo qua' ngoai vung QC", wrongClick === 0, `wrong=${wrongClick}`);
+  mp.classList.remove("ad-showing"); endcap.remove(); chapterSkip.remove();
+  v.duration = 400; v.currentTime = 0;
+  await sleep(600);
+  check("17e het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
   document.getElementById("out").textContent = results.join("\n");
 })();
 </script>

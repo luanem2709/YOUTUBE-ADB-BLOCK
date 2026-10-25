@@ -125,6 +125,17 @@ const BANNER_SELECTORS = [
     "ytm-display-ad-renderer",
     "ytm-ad-slot-renderer",
     "ytm-in-feed-ad-layout-renderer",
+    "ytd-engagement-panel-section-list-renderer[target-id='engagement-panel-ads']",
+    "ytd-ads-engagement-panel-content-renderer",
+    "ytd-action-companion-ad-renderer",
+    "ytd-player-legacy-desktop-watch-ads-renderer",
+    "panel-ad-header-image-lockup-view-model",
+    "ad-grid-card-collection-view-model",
+    "ytd-video-masthead-ad-v3-renderer",
+    "ytd-search-pyv-renderer",
+    "ytd-promoted-video-renderer",
+    "#below #player-ads",
+    "#panels ytd-ads-engagement-panel-content-renderer",
 ];
 let BANNER_SELECTOR_STR = BANNER_SELECTORS.join(",");
 

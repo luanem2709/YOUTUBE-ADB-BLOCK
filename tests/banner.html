@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html dark><head><meta charset="utf-8">
+<link rel="stylesheet" href="/content.css">
+</head><body>
+<div id="below">
+  <div id="player-ads"><ytd-ads-engagement-panel-content-renderer id="adpanel" style="display:block;height:120px">
+    <panel-ad-header-image-lockup-view-model style="display:block">Free migration · Được tài trợ · hostinger.com</panel-ad-header-image-lockup-view-model>
+    <ad-grid-card-collection-view-model id="grid" style="display:block">Cloud Hosting | Web Hosting | ...</ad-grid-card-collection-view-model>
+  </ytd-ads-engagement-panel-content-renderer></div>
+  <ytd-watch-metadata id="meta" style="display:block">Tiêu đề video</ytd-watch-metadata>
+</div>
+<ytd-engagement-panel-section-list-renderer id="p1" target-id="engagement-panel-ads" style="display:block">QC</ytd-engagement-panel-section-list-renderer>
+<ytd-engagement-panel-section-list-renderer id="p2" target-id="engagement-panel-comments-section" style="display:block">Bình luận</ytd-engagement-panel-section-list-renderer>
+<ytd-action-companion-ad-renderer id="comp" style="display:block">QC</ytd-action-companion-ad-renderer>
+<pre id="out">RUNNING</pre>
+<script>
+const R = [];
+const check = (n, c, x) => R.push((c ? "PASS " : "FAIL ") + n + (x ? "  [" + x + "]" : ""));
+const d = (id) => getComputedStyle(document.getElementById(id)).display;
+check("K1 an khung QC di kem duoi trinh phat", d("player-ads") === "none" && d("adpanel") === "none");
+check("K2 an bang QC ben (engagement-panel-ads)", d("p1") === "none" && d("comp") === "none");
+check("K3 KHONG an bang binh luan", d("p2") !== "none");
+check("K4 KHONG an tieu de / thong tin video", d("meta") !== "none");
+document.getElementById("out").textContent = R.join("\n");
+</script></body></html>

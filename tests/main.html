@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<div id="movie_player" class="html5-video-player" style="width:640px;height:360px">
+  <video class="html5-main-video" style="width:640px;height:360px"></video>
+  <div class="video-ads ytp-ad-module"></div>
+</div>
+<div id="shorts-player" class="html5-video-player" style="width:300px;height:500px">
+  <video class="html5-main-video" style="width:300px;height:500px"></video>
+</div>
+<pre id="out">RUNNING</pre>
+<script>
+// Giả lập media: duration/currentTime có thể điều khiển
+function fakeMedia(v, dur) {
+  let t = 0, d = dur;
+  Object.defineProperty(v, "duration", { configurable: true, get: () => d, set: (x) => { d = x; } });
+  Object.defineProperty(v, "currentTime", { configurable: true, get: () => t, set: (x) => { t = x; } });
+  v.play = () => Promise.resolve();
+}
+const mp = document.getElementById("movie_player");
+const sp = document.getElementById("shorts-player");
+const v = mp.querySelector("video");
+const sv = sp.querySelector("video");
+fakeMedia(v, 30); fakeMedia(sv, 25);
+mp.getPlaybackRate = () => 1;
+</script>
+<script src="/content-main.js"></script>
+<script>
+const results = [];
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+function check(name, cond, extra) { results.push((cond ? "PASS " : "FAIL ") + name + (extra ? "  [" + extra + "]" : "")); }
+function addBadge(p) { const b = document.createElement("div"); b.className = "ytp-ad-badge"; b.style.cssText = "width:40px;height:20px"; b.textContent = "Ad"; p.appendChild(b); return b; }
+
+(async () => {
+  window.postMessage({ type: "FG_LICENSE", ok: true, settings: { blockVideo: true, muteAds: true, fastSkip: true }, whitelisted: false }, "*");
+  await sleep(400);
+
+  // 1. Video thường
+  v.currentTime = 5;
+  await sleep(800);
+  check("1 video thuong khong bi dong", v.playbackRate === 1 && !v.muted && v.currentTime === 5, `rate=${v.playbackRate} muted=${v.muted} t=${v.currentTime}`);
+
+  // 2. Class ad-showing SÓT nhưng không có UI QC (nguyên nhân auto tua cũ), video ngắn
+  mp.classList.add("ad-showing");
+  v.duration = 45; v.currentTime = 3;
+  await sleep(800);
+  check("2 class ad-showing sot -> khong tua", v.playbackRate === 1 && !v.muted && v.currentTime === 3, `rate=${v.playbackRate} muted=${v.muted} t=${v.currentTime}`);
+
+  // 3. Badge QC còn sót nhưng KHÔNG có class ad-showing
+  mp.classList.remove("ad-showing");
+  const stale = addBadge(mp);
+  await sleep(800);
+  check("3 badge sot khong co class -> khong tua", v.playbackRate === 1 && v.currentTime === 3, `rate=${v.playbackRate} t=${v.currentTime}`);
+  stale.remove();
+
+  // 4. QC thật
+  v.duration = 15; v.currentTime = 1;
+  mp.classList.add("ad-showing");
+  const badge = addBadge(mp);
+  await sleep(500);
+  check("4 QC that -> mute + 16x + tua cuoi", v.muted && v.playbackRate === 16 && v.currentTime >= 14.8, `rate=${v.playbackRate} muted=${v.muted} t=${v.currentTime}`);
+
+  // 5. Hết QC -> khôi phục
+  mp.classList.remove("ad-showing"); badge.remove();
+  v.duration = 600; v.currentTime = 0;
+  await sleep(700);
+  check("5 het QC -> khoi phuc 1x, bo mute, khong tua video chinh", v.playbackRate === 1 && !v.muted && v.currentTime === 0, `rate=${v.playbackRate} muted=${v.muted} t=${v.currentTime}`);
+
+  // 6. Người dùng đã mute từ trước -> giữ nguyên mute sau QC
+  v.muted = true;
+  v.duration = 10; v.currentTime = 1;
+  mp.classList.add("ad-showing"); const b2 = addBadge(mp);
+  await sleep(500);
+  mp.classList.remove("ad-showing"); b2.remove();
+  v.duration = 300; v.currentTime = 0;
+  await sleep(700);
+  check("6 user tu mute -> van mute sau QC", v.muted === true && v.playbackRate === 1, `rate=${v.playbackRate} muted=${v.muted}`);
+  v.muted = false;
+
+  // 7. Người dùng xem 1.5x -> sau QC trở lại 1.5x
+  mp.getPlaybackRate = () => 1.5; v.playbackRate = 1.5;
+  v.duration = 10; v.currentTime = 1;
+  mp.classList.add("ad-showing"); const b3 = addBadge(mp);
+  await sleep(500);
+  mp.classList.remove("ad-showing"); b3.remove();
+  v.duration = 300; v.currentTime = 0;
+  await sleep(700);
+  check("7 toc do 1.5x cua user duoc giu", v.playbackRate === 1.5, `rate=${v.playbackRate}`);
+  mp.getPlaybackRate = () => 1; v.playbackRate = 1;
+
+  // 8. Watchdog: video chính kẹt 16x không có QC
+  v.playbackRate = 16;
+  await sleep(700);
+  check("8 watchdog go ket 16x", v.playbackRate === 1, `rate=${v.playbackRate}`);
+
+  // 9. Nút Skip hiện -> được bấm, không tua
+  let clicked = 0;
+  v.duration = 20; v.currentTime = 2;
+  mp.classList.add("ad-showing");
+  const skip = document.createElement("button"); skip.className = "ytp-skip-ad-button"; skip.style.cssText = "width:80px;height:30px"; skip.onclick = () => clicked++;
+  mp.appendChild(skip);
+  await sleep(500);
+  check("9 bam nut Skip", clicked > 0, `clicked=${clicked}`);
+  mp.classList.remove("ad-showing"); skip.remove();
+  await sleep(500);
+
+  // 10. Shorts: QC trong shorts-player
+  sv.duration = 12; sv.currentTime = 1;
+  sp.classList.add("ad-showing"); const b4 = addBadge(sp);
+  await sleep(500);
+  check("10 Shorts QC xu ly", sv.muted && sv.playbackRate === 16, `rate=${sv.playbackRate} muted=${sv.muted}`);
+  sp.classList.remove("ad-showing"); b4.remove();
+  await sleep(600);
+  check("10b Shorts khoi phuc", sv.playbackRate === 1 && !sv.muted, `rate=${sv.playbackRate} muted=${sv.muted}`);
+
+  // 11. Shorts thường (không QC) không bị đụng
+  sv.duration = 40; sv.currentTime = 4;
+  await sleep(600);
+  check("11 Shorts thuong khong bi tua", sv.playbackRate === 1 && sv.currentTime === 4, `rate=${sv.playbackRate} t=${sv.currentTime}`);
+
+  // 12. Tắt blockVideo -> không đụng QC
+  window.postMessage({ type: "FG_LICENSE", ok: true, settings: { blockVideo: false }, whitelisted: false }, "*");
+  await sleep(200);
+  v.duration = 15; v.currentTime = 1;
+  mp.classList.add("ad-showing"); const b5 = addBadge(mp);
+  await sleep(500);
+  check("12 tat blockVideo -> khong dong", v.playbackRate === 1 && !v.muted && v.currentTime === 1, `rate=${v.playbackRate} t=${v.currentTime}`);
+  mp.classList.remove("ad-showing"); b5.remove();
+
+  // 13. Whitelist kênh
+  window.postMessage({ type: "FG_LICENSE", ok: true, settings: { blockVideo: true }, whitelisted: true }, "*");
+  await sleep(200);
+  mp.classList.add("ad-showing"); const b6 = addBadge(mp);
+  await sleep(500);
+  check("13 kenh whitelist -> khong dong", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate}`);
+  mp.classList.remove("ad-showing"); b6.remove();
+
+  // 14. Không có license
+  window.postMessage({ type: "FG_LICENSE", ok: false, settings: {}, whitelisted: false }, "*");
+  await sleep(200);
+  mp.classList.add("ad-showing"); const b7 = addBadge(mp);
+  await sleep(500);
+  check("14 chua kich hoat -> khong dong", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate}`);
+  mp.classList.remove("ad-showing"); b7.remove();
+
+  // Bật lại
+  window.postMessage({ type: "FG_LICENSE", ok: true, settings: { blockVideo: true, muteAds: true, fastSkip: true }, whitelisted: false }, "*");
+  await sleep(400);
+  let counts = 0;
+  window.addEventListener("message", (e) => { if (e.data && e.data.type === "FG_COUNT" && e.data.category === "video") counts++; });
+
+  // 15. Chuỗi 2 QC: UI QC biến mất 300ms giữa 2 QC nhưng class còn -> giữ 16x, đếm 1 lần
+  v.duration = 15; v.currentTime = 1;
+  mp.classList.add("ad-showing"); let pb = addBadge(mp);
+  await sleep(400);
+  pb.remove();
+  await sleep(300);
+  const midRate = v.playbackRate, midMuted = v.muted;
+  pb = addBadge(mp); v.duration = 12; v.currentTime = 1;
+  await sleep(400);
+  check("15 chuoi QC: khong bat tieng/1x chop nhoang giua 2 QC", midRate === 16 && midMuted === true && v.playbackRate === 16, `mid=${midRate}/${midMuted}`);
+  check("15b chuoi QC chi dem 1 lan", counts === 1, `counts=${counts}`);
+  mp.classList.remove("ad-showing"); pb.remove();
+  v.duration = 500; v.currentTime = 0;
+  await sleep(600);
+  check("15c het chuoi QC -> khoi phuc", v.playbackRate === 1 && !v.muted && v.currentTime === 0, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 16. Đang QC thì UI mất nhưng class sót mãi -> khôi phục sau ~700ms, không tua video chính
+  v.duration = 15; v.currentTime = 1;
+  mp.classList.add("ad-showing"); const b8 = addBadge(mp);
+  await sleep(400);
+  b8.remove(); v.duration = 900; v.currentTime = 10;
+  await sleep(1200);
+  check("16 class sot sau QC -> van khoi phuc, khong tua", v.playbackRate === 1 && !v.muted && v.currentTime === 10, `rate=${v.playbackRate} muted=${v.muted} t=${v.currentTime}`);
+  mp.classList.remove("ad-showing");
+
+  document.getElementById("out").textContent = results.join("\n");
+})();
+</script>
+</body></html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Spotify – Web Player</title></head>
+<body>
+<div data-testid="ad-slot-container" style="width:300px;height:100px">Banner QC trang chủ (tĩnh)</div>
+<iframe src="about:blank#doubleclick" style="width:10px;height:10px"></iframe>
+<div data-testid="now-playing-bar" style="width:800px;height:80px">
+  <div data-testid="now-playing-widget" aria-label="Đang phát: Bài hát A" style="width:300px;height:60px">
+    <a data-testid="context-item-link" href="/track/123">Bài hát A</a> <span>Ca sĩ B</span>
+  </div>
+  <button data-testid="control-button-playpause" aria-label="Pause">||</button>
+  <button data-testid="control-button-skip-forward" aria-label="Next" style="width:30px;height:30px">></button>
+</div>
+<audio id="au"></audio>
+<pre id="out">RUNNING</pre>
+<script>
+const store = { enabled: true, licenseValid: true, licenseExpires: "2099-12-31", settings: { blockSpotify: true } };
+const stub = {
+  storage: {
+    local: { get: (k, cb) => cb({ ...store }), set: () => {} },
+    session: { get: (k, cb) => cb({}), set: () => {} },
+    onChanged: { addListener: () => {} },
+  },
+  runtime: { sendMessage: () => {}, lastError: undefined },
+};
+try { Object.defineProperty(window, "chrome", { value: stub, configurable: true, writable: true }); } catch (e) { window.chrome = stub; }
+const au = document.getElementById("au");
+let t = 50, d = 200, paused = false;
+Object.defineProperty(au, "duration", { get: () => d });
+Object.defineProperty(au, "currentTime", { get: () => t, set: (x) => { t = x; } });
+Object.defineProperty(au, "paused", { get: () => paused });
+let nextClicks = 0;
+document.querySelector('[data-testid="control-button-skip-forward"]').onclick = () => nextClicks++;
+</script>
+<script>window.FunnyLicense = { verifyStored: async () => ({ ok: true }) };</script>
+<script src="/content-spotify.js"></script>
+<script>
+const R = [];
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const check = (n, c, x) => R.push((c ? "PASS " : "FAIL ") + n + (x ? "  [" + x + "]" : ""));
+(async () => {
+  await sleep(1500);
+  check("S1 banner QC tinh + iframe doubleclick -> bai hat KHONG bi tua/skip/mute",
+    !au.muted && au.playbackRate === 1 && t === 50 && nextClicks === 0,
+    `muted=${au.muted} rate=${au.playbackRate} t=${t} next=${nextClicks}`);
+
+  // QC thật: widget hiển thị "Advertisement", media ngắn
+  const w = document.querySelector('[data-testid="now-playing-widget"]');
+  w.innerHTML = "<span>Advertisement</span>";
+  d = 30; t = 2;
+  await sleep(800);
+  check("S2 QC that -> mute + 16x", au.muted && au.playbackRate === 16, `muted=${au.muted} rate=${au.playbackRate} t=${t} next=${nextClicks}`);
+
+  // Hết QC
+  w.innerHTML = '<a data-testid="context-item-link" href="/track/456">Bài C</a>';
+  d = 210; t = 0;
+  await sleep(800);
+  check("S3 het QC -> khoi phuc", !au.muted && au.playbackRate === 1 && t === 0, `muted=${au.muted} rate=${au.playbackRate} t=${t}`);
+  document.getElementById("out").textContent = R.join("\n");
+})();
+</script>
+</body></html>

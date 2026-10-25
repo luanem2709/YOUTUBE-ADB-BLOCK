@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Kiểm tra cú pháp
+        run: |
+          for f in background.js license.js content-main.js content.js content-spotify.js content-spotify-main.js popup.js options.js stats.js; do
+            node --check "$f"
+          done
+          node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); JSON.parse(require('fs').readFileSync('rules/dnr_rules.json','utf8')); JSON.parse(require('fs').readFileSync('release/remote-config.json','utf8'))"
+
+      - name: Chạy toàn bộ test (Chrome headless)
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: npm test

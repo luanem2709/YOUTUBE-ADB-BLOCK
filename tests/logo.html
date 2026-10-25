@@ -37,8 +37,10 @@ const after = () => getComputedStyle(document.getElementById("logo-icon"), "::af
 
 check("G1 chua bat -> giu nguyen logo YouTube", op("red") === "1" && after().content === "none");
 document.documentElement.classList.add("fg-logo-on");
-check("G2 bat -> an nut Play do", op("red") === "0" && op("tri") === "0");
-check("G3 van giu chu 'YouTube'", op("word") === "1");
+const svgOp = getComputedStyle(document.querySelector("#logo-icon svg")).opacity;
+check("G2 bat -> an logo YouTube goc (nut do + chu YouTube)", svgOp === "0");
+const before = getComputedStyle(document.getElementById("logo-icon"), "::before");
+check("G3 hien chu 'Premium'", before.content === '"Premium"', before.content);
 const a = after();
 check("G4 hien logo FUNNYGAME", a.content !== "none" && /fg-logo-yt\.png/.test(a.backgroundImage), a.backgroundImage.slice(0, 60));
 const red = document.getElementById("red").getBoundingClientRect();

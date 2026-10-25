@@ -252,10 +252,16 @@ function initialize() {
     });
 
     try {
-        chrome.runtime.onMessage.addListener((msg) => {
+        chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (msg?.type === "FG_RESUME") {
                 window.postMessage({ type: "FG_RESUME_PLAY" }, "*");
+                return false;
             }
+            if (msg?.type === "FG_DIAG") {
+                requestDiagnostics().then(sendResponse);
+                return true;
+            }
+            return false;
         });
     } catch { /* ignore */ }
 
@@ -271,6 +277,31 @@ function initialize() {
     detectAndStoreUser();
     window.postMessage({ type: "FG_TOKEN_REQUEST" }, "*");
     setTimeout(() => window.postMessage({ type: "FG_TOKEN_REQUEST" }, "*"), 300);
+}
+
+function requestDiagnostics() {
+    return new Promise((resolve) => {
+        const id = Math.random().toString(36).slice(2);
+        const base = {
+            version: chrome.runtime.getManifest().version,
+            url: location.href.slice(0, 120),
+            time: new Date().toISOString(),
+            enabled: isEnabled,
+            hiddenBanners: document.querySelectorAll(BANNER_SELECTOR_STR).length,
+        };
+        const timer = setTimeout(() => {
+            window.removeEventListener("message", onRes);
+            resolve({ ...base, main: "không phản hồi (thử tải lại trang)" });
+        }, 1500);
+        function onRes(e) {
+            if (e.source !== window || !e.data || e.data.type !== "FG_DIAG_RES" || e.data.token !== msgToken || e.data.id !== id) return;
+            clearTimeout(timer);
+            window.removeEventListener("message", onRes);
+            resolve({ ...base, ...e.data.data });
+        }
+        window.addEventListener("message", onRes);
+        postToMain("FG_DIAG_REQ", { id });
+    });
 }
 
 function startWhenReady() {

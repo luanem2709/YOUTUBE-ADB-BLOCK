@@ -142,6 +142,26 @@ const tick = () => v.dispatchEvent(new Event("timeupdate"));
   await sleep(600);
   check("R4 het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
 
+  // ---------- Báo lỗi quảng cáo ----------
+  let diag = null;
+  window.addEventListener("message", (e) => { if (e.data && e.data.type === "FG_DIAG_RES" && e.data.id === "d1") diag = e.data; });
+  lic({ jumpAhead: false, pipButton: false });
+  await sleep(300);
+  window.postMessage({ type: "FG_DIAG_REQ", id: "d1" }, "*");
+  await sleep(200);
+  check("D1 yeu cau khong co token -> khong tra loi", diag === null);
+  mp.classList.add("ad-showing");
+  const dskip = document.createElement("button"); dskip.className = "ytp-weird-skip"; dskip.textContent = "Bỏ qua"; dskip.style.cssText = "width:60px;height:20px";
+  const dpart = document.createElement("div"); dpart.className = "ytp-ad-weird-endcap"; dpart.style.cssText = "width:50px;height:20px"; dpart.appendChild(dskip);
+  mp.appendChild(dpart);
+  window.postMessage({ type: "FG_DIAG_REQ", token, id: "d1" }, "*");
+  await sleep(200);
+  const dd = diag && diag.data;
+  check("D2 tra ve trang thai trinh phat", !!dd && dd.adShowing === true && typeof dd.playerClass === "string" && !!dd.video, dd ? Object.keys(dd).join(",") : "null");
+  check("D3 liet ke thanh phan QC dang hien", !!dd && dd.adParts.some((x) => x.includes("ytp-ad-weird-endcap")));
+  check("D4 liet ke nut 'Bo qua'", !!dd && dd.skipButtons.length > 0 && dd.skipButtons[0].includes("ytp-weird-skip"));
+  mp.classList.remove("ad-showing"); dpart.remove();
+
   document.getElementById("out").textContent = R.join("\n");
 })();
 </script>

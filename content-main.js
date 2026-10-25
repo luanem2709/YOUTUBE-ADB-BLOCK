@@ -926,23 +926,16 @@
 
     const AMB_STYLE = {
         position: "absolute", zIndex: "1", pointerEvents: "none", display: "block", margin: "0",
-        mixBlendMode: "screen", filter: "blur(40px) saturate(1.8) brightness(1.15)", opacity: "0.55",
+        mixBlendMode: "screen", filter: "blur(36px) saturate(1.9) brightness(1.25)", opacity: "0.75",
         webkitMaskImage: "linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%), linear-gradient(to bottom, #000 0%, rgba(0,0,0,0.6) 35%, transparent 100%)",
         maskImage: "linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%), linear-gradient(to bottom, #000 0%, rgba(0,0,0,0.6) 35%, transparent 100%)",
         webkitMaskComposite: "source-in",
         maskComposite: "intersect",
     };
 
-    function nativeCinematicsOn() {
-        // YouTube đã bật "Chế độ môi trường" của chính nó → không vẽ chồng thêm
-        const c = document.querySelector("#cinematics canvas, #cinematics-container canvas");
-        if (!c || c.getBoundingClientRect().width < 10) return false;
-        return parseFloat(window.getComputedStyle(c.parentElement || c).opacity || "1") > 0.05;
-    }
-
     function ambientWanted() {
         return allowLicense && fgSettings.ambientGlow !== false && isWatchPage() && !!document.body &&
-            document.documentElement.hasAttribute("dark") && !document.fullscreenElement && !nativeCinematicsOn();
+            document.documentElement.hasAttribute("dark") && !document.fullscreenElement;
     }
 
     function teardownAmbient() {
@@ -969,7 +962,7 @@
             left: (left + sx) + "px",
             top: (pr.bottom + sy) + "px",       // bắt đầu ĐÚNG mép dưới trình phát → không đè lên video
             width: Math.max(0, right - left) + "px",
-            height: (pr.height * 0.62) + "px",
+            height: (pr.height * 0.48) + "px",
             visibility: "visible",
         };
         for (const k in next) if (st[k] !== next[k]) st[k] = next[k];

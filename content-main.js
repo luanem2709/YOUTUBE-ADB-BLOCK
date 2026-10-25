@@ -26,6 +26,11 @@
         ".ytp-ad-skip-button",
         ".ytp-ad-skip-button-modern",
         ".ytp-ad-skip-button-slot",
+        ".ytp-ad-action-interstitial",
+        ".ytp-ad-avatar",
+        ".ytp-ad-headline",
+        ".ytp-ad-call-to-action",
+        "[class*='ytp-ad-']:not(.ytp-ad-module):not(.video-ads):not(.ytp-ad-overlay-container):not(.ytp-ad-persistent-progress-bar-container)",
     ];
     let AD_SIGNAL_STR = AD_SIGNAL_STR_BASE.join(",");
 
@@ -37,8 +42,16 @@
         ".ytp-skip-ad-button-container button",
         ".ytp-ad-skip-button-container button",
         ".ytp-ad-survey-player-overlay-skip-or-preview button",
+        ".ytp-ad-action-interstitial-skip-button",
+        "button[class*='skip-ad']",
+        "button[class*='ad-skip']",
+        "[id^='skip-button'] button",
     ];
     let SKIP_STR = SKIP_STR_BASE.join(",");
+
+    // Nút "Bỏ qua" kiểu mới (đổi tên class): tìm theo chữ, CHỈ trong vùng quảng cáo → không bấm nhầm nút khác
+    const AD_ZONE_BUTTONS = ".video-ads button, .ytp-ad-module button, [class*='ytp-ad-'] button, [class*='ytp-ad-'] [role='button']";
+    const SKIP_TEXT_RE = /^\s*(bỏ qua|bo qua|skip)(\s*(quảng cáo|quang cao|ads?|video))?\s*[›>▶▸⏭]?\s*$/i;
 
     const ANTI_ADBLOCK_SELECTOR_STR_BASE = [
         "ytd-enforcement-message-view-model",
@@ -241,6 +254,15 @@
         for (let i = 0; i < btns.length; i++) {
             if (isVisibleEl(btns[i])) {
                 try { btns[i].click(); } catch { /* ignore */ }
+                return true;
+            }
+        }
+        const zone = player.querySelectorAll(AD_ZONE_BUTTONS);
+        for (let i = 0; i < zone.length; i++) {
+            const b = zone[i];
+            const label = (b.getAttribute("aria-label") || b.textContent || "").trim();
+            if (label && SKIP_TEXT_RE.test(label) && isVisibleEl(b)) {
+                try { b.click(); } catch { /* ignore */ }
                 return true;
             }
         }

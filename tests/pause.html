@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<div id="movie_player" class="html5-video-player" style="width:640px;height:360px">
+  <video class="html5-main-video" style="width:640px;height:360px"></video>
+</div>
+<pre id="out">RUNNING</pre>
+<script>
+const mp = document.getElementById("movie_player");
+const v = mp.querySelector("video");
+let paused = true, t = 0, d = 300, ended = false, rs = 4;
+Object.defineProperty(v, "paused", { get: () => paused });
+Object.defineProperty(v, "ended", { get: () => ended });
+Object.defineProperty(v, "duration", { get: () => d });
+Object.defineProperty(v, "readyState", { get: () => rs });
+Object.defineProperty(v, "currentTime", { get: () => t, set: (x) => { t = x; } });
+let playCalls = 0;
+v.play = () => { playCalls++; paused = false; v.dispatchEvent(new Event("play")); return Promise.resolve(); };
+v.pause = () => { paused = true; v.dispatchEvent(new Event("pause")); };
+mp.playVideo = () => v.play();
+mp.getPlaybackRate = () => 1;
+const captured = {}; navigator.mediaSession.setActionHandler = (a, h) => { captured[a] = h; };
+</script>
+<script src="/content-main.js"></script>
+<script>
+let mediaPauseHandler = null;
+navigator.mediaSession.setActionHandler("pause", () => { v.pause(); });
+// Lấy handler đã bị bọc để mô phỏng bấm phím media
+const R = [];
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const check = (n, c, x) => R.push((c ? "PASS " : "FAIL ") + n + (x ? "  [" + x + "]" : ""));
+function ytPause() { v.pause(); } // YouTube tự pause (không phải người dùng)
+
+(async () => {
+  window.postMessage({ type: "FG_LICENSE", ok: true, settings: { blockVideo: true }, whitelisted: false }, "*");
+  await sleep(400);
+
+  // P1: đổi clip → video mới nạp ở trạng thái pause, KHÔNG có sự kiện pause
+  paused = true; t = 0;
+  v.dispatchEvent(new Event("loadeddata"));
+  document.dispatchEvent(new Event("yt-navigate-finish"));
+  await sleep(1200);
+  check("P1 doi clip -> tu phat", paused === false, `paused=${paused} plays=${playCalls}`);
+
+  // P2: đang xem, YouTube tự pause
+  t = 30; await sleep(3000);
+  ytPause();
+  await sleep(800);
+  check("P2 YouTube tu pause -> phat lai", paused === false, `paused=${paused}`);
+
+  // P3: người dùng bấm phím media pause (OS → MediaSession, không có keydown) → phải GIỮ pause
+  await sleep(3000);
+  captured.pause && captured.pause({ action: "pause" });
+  await sleep(1500);
+  check("P3 phim media phan cung pause -> giu nguyen pause", typeof captured.pause === "function" && paused === true, `paused=${paused}`);
+  captured.play = null;
+  // P4: gần hết video → không phát lại
+  await sleep(3000);
+  t = d - 0.5; ytPause();
+  await sleep(800);
+  check("P4 sap het video -> khong phat lai", paused === true, `paused=${paused}`);
+  t = 50;
+
+  // P5: chống giằng co — YouTube pause liên tục 10 lần
+  await sleep(11000);
+  const before = playCalls;
+  for (let i = 0; i < 10; i++) { v.play(); ytPause(); await sleep(400); }
+  await sleep(500);
+  const resumes = playCalls - before - 10;
+  check("P5 gioi han tu phat lai <= 4 lan/10s", resumes <= 4, `resumes=${resumes}`);
+
+  // P6: đang QC → không đụng (để bộ xử lý QC lo)
+  await sleep(11000);
+  mp.classList.add("ad-showing");
+  paused = false; ytPause();
+  const pc = playCalls;
+  await sleep(800);
+  check("P6 dang co class QC -> khong tu phat lai", playCalls === pc, `plays=${playCalls - pc}`);
+  mp.classList.remove("ad-showing");
+
+  // P7: chưa kích hoạt → không đụng
+  window.postMessage({ type: "FG_LICENSE", ok: false, settings: {}, whitelisted: false }, "*");
+  await sleep(300);
+  paused = false; ytPause();
+  const pc2 = playCalls;
+  await sleep(800);
+  check("P7 chua kich hoat -> khong tu phat lai", playCalls === pc2);
+
+  // P8: trang không phải /watch → không đụng
+  window.postMessage({ type: "FG_LICENSE", ok: true, settings: {}, whitelisted: false }, "*");
+  await sleep(300);
+  history.pushState({}, "", "/feed/subscriptions");
+  paused = false; ytPause();
+  const pc3 = playCalls;
+  await sleep(800);
+  check("P8 trang khong phai /watch -> khong tu phat lai", playCalls === pc3);
+
+  document.getElementById("out").textContent = R.filter(x => !x.startsWith("INFO")).join("\n");
+})();
+</script>
+</body></html>

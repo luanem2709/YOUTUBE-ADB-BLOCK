@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<div id="movie_player" class="html5-video-player" style="width:640px;height:360px;position:relative">
+  <video class="html5-main-video" style="width:640px;height:360px"></video>
+  <div class="ytp-chrome-bottom"><div class="ytp-right-controls" style="width:240px;height:40px"><button class="ytp-settings-button" style="width:40px;height:40px"></button></div></div>
+</div>
+<pre id="out">RUNNING</pre>
+<script>
+window.__FG_TEST__ = {};
+const mp = document.getElementById("movie_player");
+const v = mp.querySelector("video");
+let t = 0, d = 600;
+Object.defineProperty(v, "duration", { configurable: true, get: () => d });
+Object.defineProperty(v, "currentTime", { configurable: true, get: () => t, set: (x) => { t = x; } });
+Object.defineProperty(v, "paused", { get: () => false });
+v.play = () => Promise.resolve();
+let vid = "sbvideo0001";
+mp.getVideoData = () => ({ video_id: vid });
+mp.getPlaybackRate = () => 1;
+let seekTo = null;
+mp.seekTo = (x) => { seekTo = x; t = x; };
+// Bắt các tin nhắn MAIN world gửi cho content script
+const sent = [];
+window.addEventListener("message", (e) => { if (e.data && e.data.type) sent.push(e.data); });
+</script>
+<script src="/content-main.js"></script>
+<script>
+const R = [];
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const check = (n, c, x) => R.push((c ? "PASS " : "FAIL ") + n + (x ? "  [" + x + "]" : ""));
+const lic = (s, extra) => window.postMessage(Object.assign({ type: "FG_LICENSE", ok: true, settings: s, whitelisted: false }, extra || {}), "*");
+const toastText = () => (mp.querySelector(".fg-toast") || {}).textContent || "";
+const tick = () => v.dispatchEvent(new Event("timeupdate"));
+
+(async () => {
+  let token = null;
+  window.addEventListener("message", (e) => { if (e.data && e.data.type === "FG_TOKEN_READY") token = e.data.token; });
+  window.postMessage({ type: "FG_TOKEN_REQUEST" }, "*");
+  lic({ sponsorBlock: true, jumpAhead: true, pipButton: false });
+  await sleep(800);
+  check("T0 lay duoc token noi bo", !!token);
+
+  // ---------- SponsorBlock ----------
+  const req = sent.find((m) => m.type === "FG_SB_REQ");
+  check("SB1 xin danh sach doan tai tro cho video hien tai", req && req.videoId === vid && req.token === token, JSON.stringify(req || {}));
+
+  // Tin nhắn giả mạo (không có token) phải bị bỏ qua
+  window.postMessage({ type: "FG_SB", videoId: vid, segments: [{ start: 0, end: 500, category: "sponsor", uuid: "fake" }] }, "*");
+  await sleep(100);
+  t = 5; tick(); await sleep(50);
+  check("SB2 tin nhan gia mao khong co token -> bo qua", t === 5, `t=${t}`);
+
+  window.postMessage({ type: "FG_SB", token, videoId: vid, segments: [{ start: 10, end: 40, category: "sponsor", uuid: "u1" }, { start: 100, end: 120, category: "interaction", uuid: "u2" }] }, "*");
+  await sleep(100);
+  t = 12; tick(); await sleep(50);
+  check("SB3 vao doan tai tro -> nhay toi cuoi doan", t === 40, `t=${t}`);
+  check("SB4 hien thong bao 'Da bo qua doan tai tro'", /bỏ qua đoạn tài trợ/.test(toastText()), toastText());
+  t = 15; tick(); await sleep(50);
+  check("SB5 nguoi dung tua nguoc lai -> KHONG bo qua lan 2", t === 15, `t=${t}`);
+  mp.classList.add("ad-showing");
+  t = 101; tick(); await sleep(50);
+  check("SB6 dang co QC -> khong dong vao", t === 101, `t=${t}`);
+  mp.classList.remove("ad-showing");
+  t = 101; tick(); await sleep(50);
+  check("SB7 doan nhac dang ky -> bo qua", t === 120 && /nhắc đăng ký/.test(toastText()), `t=${t}`);
+
+  lic({ sponsorBlock: false, jumpAhead: true, pipButton: false });
+  vid = "sbvideo0002"; await sleep(500);
+  window.postMessage({ type: "FG_SB", token, videoId: vid, segments: [{ start: 10, end: 40, category: "sponsor", uuid: "u3" }] }, "*");
+  await sleep(100);
+  t = 12; tick(); await sleep(50);
+  check("SB8 tat SponsorBlock -> khong bo qua", t === 12, `t=${t}`);
+  check("SB9 tat SponsorBlock -> khong xin du lieu", !sent.some((m) => m.type === "FG_SB_REQ" && m.videoId === "sbvideo0002"));
+
+  lic({ sponsorBlock: true, jumpAhead: true, pipButton: false }, { whitelisted: true });
+  vid = "sbvideo0003"; await sleep(500);
+  window.postMessage({ type: "FG_SB", token, videoId: vid, segments: [{ start: 10, end: 40, category: "sponsor", uuid: "u4" }] }, "*");
+  await sleep(100);
+  t = 12; tick(); await sleep(50);
+  check("SB10 kenh whitelist -> ton trong, khong bo qua", t === 12, `t=${t}`);
+  lic({ sponsorBlock: true, jumpAhead: true, pipButton: false }, { whitelisted: false });
+  await sleep(200);
+
+  // ---------- Nhảy tới đoạn hay nhất ----------
+  const F = window.__FG_TEST__.main;
+  const mk = [{ t: 10, v: 0.2 }, { t: 60, v: 0.9 }, { t: 200, v: 1.0 }, { t: 590, v: 1.0 }];
+  check("J1 chon diem xem nhieu nhat phia truoc", F.pickJumpTarget(mk, 0, 600).t === 200);
+  check("J2 bo qua diem sat cuoi video", F.pickJumpTarget(mk, 300, 600) === null);
+  check("J3 bo qua diem ngay sat hien tai (<5s)", F.pickJumpTarget([{ t: 62, v: 1 }, { t: 90, v: 0.5 }], 60, 600).t === 90);
+  const oldFmt = { a: { heatMarkerRenderer: { timeRangeStartMillis: 30000, markerDurationMillis: 6000, heatMarkerIntensityScoreNormalized: 0.7 } } };
+  check("J4 doc duoc dinh dang heatmap cu", F.extractHeatMarkers(oldFmt)[0].t === 30);
+
+  // Dữ liệu từ sự kiện điều hướng của YouTube (định dạng mới)
+  vid = "jumpvideo01"; t = 0;
+  const markers = [];
+  for (let i = 0; i < 100; i++) markers.push({ startMillis: String(i * 6000), durationMillis: "6000", intensityScoreNormalized: i === 37 ? 1 : 0.1 });
+  document.dispatchEvent(new CustomEvent("yt-navigate-finish", { detail: { response: { response: {
+    currentVideoEndpoint: { watchEndpoint: { videoId: vid } },
+    frameworkUpdates: { entityBatchUpdate: { mutations: [{ payload: { macroMarkersListEntity: { markersList: { markerType: "MARKER_TYPE_HEATMAP", markers } } } }] } },
+  } } } }));
+  await sleep(500);
+  const jb = mp.querySelector(".fg-jump-button");
+  check("J5 nut 'Nhay toi doan hay nhat' xuat hien", !!jb);
+  jb && jb.click();
+  await sleep(100);
+  check("J6 bam nut -> nhay toi diem nong nhat (222s)", seekTo === 222, `seekTo=${seekTo}`);
+  check("J7 thong bao thoi gian", /3:42/.test(toastText()), toastText());
+
+  vid = "nodatavideo"; seekTo = null;
+  jb && jb.click(); await sleep(100);
+  check("J8 video khong co du lieu -> bao, khong tua", seekTo === null && /chưa có dữ liệu/.test(toastText()), toastText());
+
+  // Dự phòng: đọc đồ thị trên thanh tiến trình
+  const c = document.createElement("div"); c.className = "ytp-heat-map-container"; c.style.cssText = "width:600px;height:20px;position:relative";
+  const ch = document.createElement("div"); ch.className = "ytp-heat-map-chapter"; ch.style.cssText = "position:absolute;left:0px;width:600px;height:20px";
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("class", "ytp-heat-map-path");
+  path.setAttribute("d", "M 0.0,100.0 C 100.0,90.0 200.0,80.0 250.0,5.0 C 300.0,80.0 600.0,90.0 1000.0,100.0");
+  svg.appendChild(path); ch.appendChild(svg); c.appendChild(ch); mp.appendChild(c);
+  const dom = F.heatFromDom(mp, 600);
+  const peak = dom.reduce((a, b) => (b.v > a.v ? b : a), dom[0] || { v: -1 });
+  check("J9 du phong doc do thi tren thanh tien trinh", Math.abs(peak.t - 150) < 1 && peak.v > 0.9, `t=${peak.t} v=${peak.v}`);
+  c.remove();
+
+  lic({ sponsorBlock: true, jumpAhead: false, pipButton: false });
+  await sleep(500);
+  check("J10 tat tinh nang -> go nut", !mp.querySelector(".fg-jump-button"));
+
+  // ---------- Cấu hình từ xa ----------
+  const newBadge = document.createElement("div"); newBadge.className = "new-ad-label-2027"; newBadge.style.cssText = "width:40px;height:20px"; mp.appendChild(newBadge);
+  d = 15; t = 1; v.muted = false; v.playbackRate = 1;
+  mp.classList.add("ad-showing");
+  await sleep(600);
+  check("R1 UI QC kieu moi chua co trong danh sach -> chua nhan dien (an toan)", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate}`);
+  lic({ jumpAhead: false, pipButton: false }, { remote: { adSignals: [".new-ad-label-2027", "<<<loi>>>", "div[[["], skipButtons: [], antiAdblock: [] } });
+  await sleep(600);
+  check("R2 cau hinh tu xa them selector moi -> nhan dien duoc QC", v.playbackRate === 16 && v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+  check("R3 selector loi trong cau hinh khong lam hong extension", !!window.__FG_TEST__.main);
+  mp.classList.remove("ad-showing"); newBadge.remove();
+  await sleep(600);
+  check("R4 het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  document.getElementById("out").textContent = R.join("\n");
+})();
+</script>
+</body></html>

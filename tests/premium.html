@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<div id="movie_player" class="html5-video-player" style="width:640px;height:360px">
+  <video class="html5-main-video" style="width:640px;height:360px"></video>
+  <div class="ytp-chrome-bottom"><div class="ytp-right-controls" style="width:200px;height:40px"><button class="ytp-settings-button" style="width:40px;height:40px"></button></div></div>
+</div>
+<pre id="out">RUNNING</pre>
+<script>
+// Giả lập trạng thái hiển thị THẬT của trình duyệt (extension sẽ coi đây là giá trị gốc)
+window.__vis = "visible";
+Object.defineProperty(Document.prototype, "visibilityState", { configurable: true, get() { return window.__vis; } });
+const mp = document.getElementById("movie_player");
+const v = mp.querySelector("video");
+let paused = false, t = 10, d = 300;
+Object.defineProperty(v, "paused", { get: () => paused });
+Object.defineProperty(v, "ended", { get: () => false });
+Object.defineProperty(v, "duration", { get: () => d });
+Object.defineProperty(v, "readyState", { get: () => 4 });
+Object.defineProperty(v, "currentTime", { get: () => t, set: (x) => { t = x; } });
+let plays = 0;
+v.play = () => { plays++; paused = false; return Promise.resolve(); };
+v.pause = () => { paused = true; v.dispatchEvent(new Event("pause")); };
+mp.playVideo = () => v.play();
+mp.getPlaybackRate = () => 1;
+let vid = "vid1", qualityCalls = [];
+mp.getVideoData = () => ({ video_id: vid });
+mp.getAvailableQualityLevels = () => ["hd1080", "hd720", "large", "medium", "auto"];
+mp.setPlaybackQualityRange = (a) => qualityCalls.push(a);
+mp.setPlaybackQuality = () => {};
+</script>
+<script src="/content-main.js"></script>
+<script>
+const R = [];
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const check = (n, c, x) => R.push((c ? "PASS " : "FAIL ") + n + (x ? "  [" + x + "]" : ""));
+let ytVisEvents = 0;
+document.addEventListener("visibilitychange", () => ytVisEvents++); // listener của "YouTube"
+const lic = (s) => window.postMessage({ type: "FG_LICENSE", ok: true, settings: s, whitelisted: false }, "*");
+function goHidden() { window.__vis = "hidden"; document.dispatchEvent(new Event("visibilitychange", { bubbles: true })); }
+function goVisible() { window.__vis = "visible"; document.dispatchEvent(new Event("visibilitychange", { bubbles: true })); }
+
+(async () => {
+  lic({ backgroundPlay: true, pipButton: true, videoQuality: "max", blockAntiAdblock: true });
+  await sleep(600);
+
+  // ---- Phát nền ----
+  goHidden();
+  check("B1 tab an: YouTube van thay 'visible'", document.visibilityState === "visible" && document.hidden === false, `${document.visibilityState}/${document.hidden}`);
+  check("B2 su kien visibilitychange bi chan khoi YouTube", ytVisEvents === 0, `events=${ytVisEvents}`);
+  v.pause(); // YouTube pause ngay khi ẩn
+  await sleep(700);
+  check("B3 YouTube pause luc an tab -> tu phat tiep", paused === false, `paused=${paused}`);
+  await sleep(3500);
+  v.pause(); // dừng về sau (vd cuộc gọi chiếm âm thanh)
+  await sleep(700);
+  check("B4 dung ve sau khi dang an (cuoc goi) -> KHONG tu phat", paused === true, `paused=${paused}`);
+  goVisible(); paused = false;
+  await sleep(300);
+
+  // Tắt phát nền
+  lic({ backgroundPlay: false, pipButton: true, videoQuality: "max", blockAntiAdblock: true });
+  await sleep(300);
+  const ev0 = ytVisEvents;
+  goHidden();
+  check("B5 tat phat nen -> YouTube thay 'hidden' that", document.visibilityState === "hidden" && document.hidden === true);
+  check("B6 tat phat nen -> su kien toi duoc YouTube", ytVisEvents === ev0 + 1);
+  v.pause();
+  await sleep(700);
+  check("B7 tat phat nen -> an tab bi pause thi giu pause", paused === true);
+  goVisible();
+  await sleep(800);
+  check("B8 tat phat nen -> mo lai tab thi phat tiep", paused === false, `paused=${paused}`);
+
+  // ---- PiP ----
+  const pipOk = !!document.pictureInPictureEnabled;
+  const btn = mp.querySelector(".ytp-right-controls .fg-pip-button");
+  check("P1 nut PiP " + (pipOk ? "duoc chen vao thanh dieu khien" : "khong chen khi trinh duyet khong ho tro"), pipOk ? !!btn : !btn, `supported=${pipOk}`);
+  check("P2 khong chen trung nut", mp.querySelectorAll(".fg-pip-button").length <= 1);
+  lic({ backgroundPlay: false, pipButton: false, videoQuality: "max", blockAntiAdblock: true });
+  await sleep(500);
+  check("P3 tat PiP -> go nut", mp.querySelectorAll(".fg-pip-button").length === 0);
+
+  // ---- Chất lượng ----
+  check("Q1 'Cao nhat' -> hd1080", qualityCalls[0] === "hd1080", JSON.stringify(qualityCalls));
+  await sleep(700);
+  check("Q2 chi ap 1 lan/video (ton trong nguoi dung tu doi)", qualityCalls.length === 1, `calls=${qualityCalls.length}`);
+  lic({ videoQuality: "720", pipButton: false, blockAntiAdblock: true });
+  vid = "vid2"; await sleep(600);
+  check("Q3 '720p' -> hd720", qualityCalls[qualityCalls.length - 1] === "hd720", JSON.stringify(qualityCalls));
+  lic({ videoQuality: "1440", pipButton: false, blockAntiAdblock: true });
+  vid = "vid3"; await sleep(600);
+  check("Q4 '1440p' khong co -> lay muc cao nhat <= 1440 (hd1080)", qualityCalls[qualityCalls.length - 1] === "hd1080", JSON.stringify(qualityCalls));
+  lic({ videoQuality: "auto", pipButton: false, blockAntiAdblock: true });
+  const qc = qualityCalls.length; vid = "vid4"; await sleep(600);
+  check("Q5 'Tu dong' -> khong can thiep", qualityCalls.length === qc);
+  lic({ videoQuality: "max", pipButton: false, blockAntiAdblock: true });
+  mp.classList.add("ad-showing"); vid = "vid5"; const qc2 = qualityCalls.length; await sleep(600);
+  check("Q6 dang QC -> khong doi chat luong", qualityCalls.length === qc2);
+  mp.classList.remove("ad-showing"); await sleep(600);
+  check("Q7 het QC -> ap chat luong cho video chinh", qualityCalls.length === qc2 + 1);
+
+  // ---- YouTube Music "Bạn vẫn đang nghe chứ?" ----
+  let musicClicked = 0;
+  const yt = document.createElement("ytmusic-you-there-renderer");
+  yt.style.cssText = "display:block;width:300px;height:100px";
+  const b = document.createElement("button"); b.textContent = "Có"; b.style.cssText = "width:60px;height:30px"; b.onclick = () => { musicClicked++; yt.remove(); };
+  yt.appendChild(b); document.body.appendChild(yt);
+  await sleep(2000);
+  check("M1 YouTube Music 'Ban van dang nghe?' -> tu bam Co", musicClicked === 1, `clicked=${musicClicked}`);
+
+  // ---- Không license ----
+  window.postMessage({ type: "FG_LICENSE", ok: false, settings: { backgroundPlay: true }, whitelisted: false }, "*");
+  await sleep(400);
+  window.__vis = "hidden";
+  check("L1 chua kich hoat -> khong gia lap visibility", document.visibilityState === "hidden");
+  window.__vis = "visible";
+
+  document.getElementById("out").textContent = R.join("\n");
+})();
+</script>
+</body></html>

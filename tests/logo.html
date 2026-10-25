@@ -4,7 +4,7 @@
   html, body { margin: 0; background: #0f0f0f; color: #fff; font-family: Roboto, Arial, sans-serif; }
   #masthead { height: 56px; display: flex; align-items: center; padding: 0 16px; gap: 16px; }
   #logo-icon { display: inline-block; width: 93px; height: 20px; }
-  #country { font-size: 10px; color: #aaa; margin-left: 2px; align-self: flex-start; margin-top: 14px; }
+  #country-code { font-size: 10px; color: #aaa; margin-left: 2px; align-self: flex-start; margin-top: 14px; }
 </style>
 <link rel="stylesheet" href="/content.css">
 <style>
@@ -25,7 +25,7 @@
         </svg>
       </div></span></yt-icon>
     </a>
-    <span id="country">VN</span>
+    <span id="country-code">VN</span>
   </ytd-topbar-logo-renderer>
 </div>
 <pre id="out">RUNNING</pre>
@@ -49,6 +49,7 @@ const L = icon.left - 3, T = icon.top + icon.height / 2 - 16;
 check("G5 logo che kin vung nut Play do", L <= red.left && L + 32 >= red.right && T <= red.top && T + 32 >= red.bottom,
   `logo ${Math.round(L)},${Math.round(T)} 32x32 | red ${Math.round(red.left)},${Math.round(red.top)} ${Math.round(red.width)}x${Math.round(red.height)}`);
 check("G6 logo khong chan bam (van bam vao ve trang chu duoc)", a.pointerEvents === "none");
+check("G7 an chu 'VN' canh logo", getComputedStyle(document.getElementById("country-code")).display === "none");
 document.getElementById("out").textContent = R.join("\n");
 </script>
 </body></html>

@@ -131,7 +131,11 @@ html.fg-logo-on ytd-topbar-logo-renderer #logo-icon svg {
 html.fg-logo-on ytd-topbar-logo-renderer #logo-icon {
     position: relative !important;
     overflow: visible !important;
-    width: 122px !important;
+    width: 112px !important;
+}
+/* Bỏ mã quốc gia ("VN") cạnh logo */
+html.fg-logo-on ytd-topbar-logo-renderer #country-code {
+    display: none !important;
 }
 html.fg-logo-on ytd-topbar-logo-renderer #logo-icon::after {
     content: "";

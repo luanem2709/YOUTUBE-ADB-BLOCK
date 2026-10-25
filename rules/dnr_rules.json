@@ -5,6 +5,7 @@
     "action": { "type": "block" },
     "condition": {
       "urlFilter": "||googleads.g.doubleclick.net",
+      "initiatorDomains": ["open.spotify.com", "play.spotify.com"],
       "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image", "media"]
     }
   },
@@ -14,6 +15,7 @@
     "action": { "type": "block" },
     "condition": {
       "urlFilter": "||static.doubleclick.net",
+      "initiatorDomains": ["open.spotify.com", "play.spotify.com"],
       "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image"]
     }
   },
@@ -23,6 +25,7 @@
     "action": { "type": "block" },
     "condition": {
       "urlFilter": "||pagead2.googlesyndication.com",
+      "initiatorDomains": ["open.spotify.com", "play.spotify.com"],
       "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image"]
     }
   },
@@ -32,34 +35,8 @@
     "action": { "type": "block" },
     "condition": {
       "urlFilter": "||www.googleadservices.com",
+      "initiatorDomains": ["open.spotify.com", "play.spotify.com"],
       "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image"]
-    }
-  },
-  {
-    "id": 5,
-    "priority": 2,
-    "action": { "type": "block" },
-    "condition": {
-      "urlFilter": "||youtube.com/pagead/",
-      "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image", "media"]
-    }
-  },
-  {
-    "id": 6,
-    "priority": 2,
-    "action": { "type": "block" },
-    "condition": {
-      "urlFilter": "||youtube.com/ptracking",
-      "resourceTypes": ["xmlhttprequest", "image"]
-    }
-  },
-  {
-    "id": 7,
-    "priority": 2,
-    "action": { "type": "block" },
-    "condition": {
-      "urlFilter": "||youtube.com/api/stats/ads",
-      "resourceTypes": ["xmlhttprequest", "ping"]
     }
   },
   {
@@ -140,6 +117,7 @@
     "action": { "type": "block" },
     "condition": {
       "urlFilter": "/audio/advertisement",
+      "initiatorDomains": ["open.spotify.com", "play.spotify.com"],
       "resourceTypes": ["media", "xmlhttprequest", "other"]
     }
   },
@@ -158,6 +136,7 @@
     "action": { "type": "block" },
     "condition": {
       "urlFilter": "||adclick.g.doubleclick.net",
+      "initiatorDomains": ["open.spotify.com", "play.spotify.com"],
       "resourceTypes": ["xmlhttprequest", "image", "sub_frame", "script", "ping"]
     }
   },
@@ -194,34 +173,8 @@
     "action": { "type": "block" },
     "condition": {
       "urlFilter": "||securepubads.g.doubleclick.net",
+      "initiatorDomains": ["open.spotify.com", "play.spotify.com"],
       "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image", "ping"]
-    }
-  },
-  {
-    "id": 23,
-    "priority": 2,
-    "action": { "type": "block" },
-    "condition": {
-      "urlFilter": "||ad.doubleclick.net/pagead/",
-      "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image", "ping"]
-    }
-  },
-  {
-    "id": 24,
-    "priority": 2,
-    "action": { "type": "block" },
-    "condition": {
-      "urlFilter": "||youtube.com/youtubei/v1/log_event",
-      "resourceTypes": ["xmlhttprequest", "ping"]
-    }
-  },
-  {
-    "id": 25,
-    "priority": 2,
-    "action": { "type": "block" },
-    "condition": {
-      "urlFilter": "||youtube.com/api/stats/watchtime",
-      "resourceTypes": ["xmlhttprequest", "ping", "image"]
     }
   },
   {
@@ -229,25 +182,8 @@
     "priority": 2,
     "action": { "type": "block" },
     "condition": {
-      "urlFilter": "||googleadapis.l.google.com",
-      "resourceTypes": ["script", "xmlhttprequest", "ping"]
-    }
-  },
-  {
-    "id": 27,
-    "priority": 2,
-    "action": { "type": "block" },
-    "condition": {
-      "urlFilter": "||imasdk.googleapis.com/js/sdkloader/ima3.js",
-      "resourceTypes": ["script"]
-    }
-  },
-  {
-    "id": 28,
-    "priority": 2,
-    "action": { "type": "block" },
-    "condition": {
       "urlFilter": "||tpc.googlesyndication.com",
+      "initiatorDomains": ["open.spotify.com", "play.spotify.com"],
       "resourceTypes": ["script", "xmlhttprequest", "image", "sub_frame"]
     }
   }

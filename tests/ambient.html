@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html dark><head><meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #0f0f0f; color: #fff; font-family: Arial, sans-serif; }
+  #primary { padding: 24px 80px; }
+  #movie_player { width: 640px; height: 360px; background: #000; border-radius: 12px; overflow: hidden; }
+  #movie_player video { width: 100%; height: 100%; display: block; }
+  #title { font-size: 20px; font-weight: bold; margin-top: 14px; }
+</style></head>
+<body>
+<div id="primary"><div id="primary-inner">
+  <div id="player"><div id="movie_player" class="html5-video-player">
+    <video class="html5-main-video" muted playsinline></video>
+    <div class="ytp-chrome-bottom"><div class="ytp-right-controls"></div></div>
+  </div></div>
+  <div id="below"><div id="title">PLAYLIST | Tiêu đề video bên dưới phải đọc rõ</div><p>Mô tả, bình luận...</p></div>
+</div></div>
+<pre id="out">RUNNING</pre>
+<script>
+// Nguồn video THẬT: canvas → captureStream → <video>
+const src = document.createElement("canvas"); src.width = 160; src.height = 90;
+const sctx = src.getContext("2d");
+window.__color = "#ff0000";
+setInterval(() => { sctx.fillStyle = window.__color; sctx.fillRect(0, 0, 160, 90); }, 30);
+sctx.fillStyle = window.__color; sctx.fillRect(0, 0, 160, 90);
+const v = document.querySelector("video");
+v.srcObject = src.captureStream(30);
+v.play().catch(() => {});
+document.getElementById("movie_player").getPlaybackRate = () => 1;
+// playVideo rỗng: tính năng "chống pause" không tự phát lại khi test bấm dừng (không có thao tác người dùng thật)
+document.getElementById("movie_player").playVideo = () => {};
+// Đếm số lần vẽ
+let draws = 0;
+const origDraw = CanvasRenderingContext2D.prototype.drawImage;
+CanvasRenderingContext2D.prototype.drawImage = function (...a) { if (this.canvas && this.canvas.classList.contains("fg-ambient")) draws++; return origDraw.apply(this, a); };
+</script>
+<script src="/content-main.js"></script>
+<script>
+const R = [];
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const check = (n, c, x) => R.push((c ? "PASS " : "FAIL ") + n + (x ? "  [" + x + "]" : ""));
+const lic = (s) => window.postMessage({ type: "FG_LICENSE", ok: true, settings: s, whitelisted: false }, "*");
+const amb = () => document.querySelector(".fg-ambient");
+function pixel() {
+  const c = amb(); if (!c) return null;
+  const d = c.getContext("2d").getImageData(24, 13, 1, 1).data;
+  return { r: d[0], g: d[1], b: d[2] };
+}
+
+(async () => {
+  lic({ ambientGlow: true, pipButton: false, jumpAhead: false, sponsorBlock: false });
+  await sleep(1500);
+  const c = amb();
+  check("A1 tao canvas anh sang nen trong #primary-inner", !!c && c.parentElement.id === "primary-inner");
+  check("A2 nam SAU noi dung (z-index -1, host isolate)", c && getComputedStyle(c).zIndex === "-1" && getComputedStyle(c.parentElement).isolation === "isolate");
+  const pr = document.getElementById("movie_player").getBoundingClientRect();
+  const cr = c ? c.getBoundingClientRect() : {};
+  check("A3 toa xuong phia duoi trinh phat (~40%)", cr.bottom > pr.bottom + pr.height * 0.3 && cr.top <= pr.top + 1, `player ${Math.round(pr.top)}-${Math.round(pr.bottom)} glow ${Math.round(cr.top)}-${Math.round(cr.bottom)}`);
+  check("A4b nam gon trong cot trinh phat (khong de cot de xuat / thanh tren)", cr.left >= pr.left - 1 && cr.right <= pr.right + 1);
+  check("A4 khong vuot qua mep man hinh (khong thanh cuon ngang)", cr.left >= 0 && cr.right <= document.documentElement.clientWidth + 0.5 && document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+  check("A5 khong chan chuot (pointer-events none)", c && getComputedStyle(c).pointerEvents === "none");
+  let px = pixel();
+  check("A6 lay dung mau video (do)", px && px.r > 150 && px.g < 80 && px.b < 80, JSON.stringify(px));
+
+  window.__color = "#0040ff";
+  await sleep(1200);
+  px = pixel();
+  check("A7 doi mau video -> anh sang doi theo (xanh)", px && px.b > 150 && px.r < 80, JSON.stringify(px));
+
+  const d0 = draws;
+  await sleep(1000);
+  const perSec = (draws - d0) / 2; // mỗi khung vẽ 2 lần: hình chính + phản chiếu
+  check("A8 tan suat ve ~10 khung/giay (tiet kiem CPU)", perSec >= 7 && perSec <= 13, `${perSec}/s`);
+
+  v.pause();
+  await sleep(600);
+  const d1 = draws; await sleep(1000);
+  check("A9 video tam dung -> NGUNG ve (0 CPU)", draws === d1, `draws +${draws - d1}`);
+  check("A10 tam dung van giu khung cuoi (khong tat phut)", !!amb());
+  v.play().catch(() => {});
+  await sleep(800);
+  check("A11 phat lai -> ve tiep", draws > d1);
+
+  // Chữ bên dưới vẫn ở trên lớp sáng
+  const t = document.getElementById("title").getBoundingClientRect();
+  const hit = document.elementFromPoint(t.left + 10, t.top + t.height / 2);
+  check("A12 chu ben duoi khong bi che", hit && hit.id === "title", hit && (hit.id || hit.className));
+
+  // Tắt tính năng
+  lic({ ambientGlow: false, pipButton: false, jumpAhead: false, sponsorBlock: false });
+  await sleep(600);
+  check("A13 tat tinh nang -> go sach (canvas + class host)", !amb() && !document.querySelector(".fg-ambient-host"));
+  lic({ ambientGlow: true, pipButton: false, jumpAhead: false, sponsorBlock: false });
+  await sleep(600);
+  check("A14 bat lai -> hien lai", !!amb());
+
+  // Giao diện sáng
+  document.documentElement.removeAttribute("dark");
+  await sleep(600);
+  check("A15 giao dien sang -> khong hien (chi dep tren nen toi)", !amb());
+  document.documentElement.setAttribute("dark", "");
+  await sleep(600);
+
+  // YouTube đã bật Chế độ môi trường của nó
+  const cin = document.createElement("div"); cin.id = "cinematics";
+  const cc = document.createElement("canvas"); cc.style.cssText = "width:200px;height:100px;display:block"; cin.appendChild(cc);
+  document.body.appendChild(cin);
+  await sleep(600);
+  check("A16 YouTube da bat Ambient mode goc -> khong ve chong", !amb());
+  cin.remove();
+  await sleep(600);
+
+  // Trang không phải /watch
+  history.pushState({}, "", "/feed/subscriptions");
+  await sleep(600);
+  check("A17 trang khong phai /watch -> khong hien", !amb());
+  history.pushState({}, "", "/watch?v=abc&t=ambient.html");
+  await sleep(600);
+
+  window.postMessage({ type: "FG_LICENSE", ok: false, settings: {}, whitelisted: false }, "*");
+  await sleep(600);
+  check("A18 chua kich hoat -> khong hien", !amb());
+
+  document.getElementById("out").textContent = R.join("\n");
+})();
+</script>
+</body></html>

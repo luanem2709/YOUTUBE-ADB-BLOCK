@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS = {
     sponsorBlock: true,
     jumpAhead: true,
     ambientGlow: true,
+    customLogo: true,
 };
 
 let dailyGoal = 50;
@@ -58,6 +59,7 @@ const settingInputs = {
     jumpAhead: $("jumpAhead"),
     sponsorBlock: $("sponsorBlock"),
     ambientGlow: $("ambientGlow"),
+    customLogo: $("customLogo"),
 };
 
 function isCheckbox(input) {

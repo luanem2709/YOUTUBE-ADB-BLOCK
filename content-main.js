@@ -916,21 +916,22 @@
         jumpAhead();
     }, true);
 
-    // ---------- HIỆU ỨNG ÁNH SÁNG NỀN (Ambient glow) ----------
-    // Màu khung hình toả mờ PHÍA DƯỚI trình phát (như đèn hắt).
-    // KHÔNG chèn vào cây DOM của YouTube (chèn vào đó từng làm hỏng trình phát):
-    // canvas riêng gắn vào <body>, đặt ngay dưới mép trình phát, hoà trộn "screen" → chữ trắng vẫn trắng, nền tối sáng màu lên.
-    // Hiệu năng: canvas 48×27, 10 khung/giây, dừng hẳn khi video tạm dừng / tab ẩn.
-    const AMB_W = 48, AMB_H = 27;
+    // ---------- HIỆU ỨNG ÁNH SÁNG NỀN (kiểu "Ambient light for YouTube") ----------
+    // Màu video toả rực ra QUANH CẢ 4 PHÍA trình phát, lan ra nền trang.
+    // Cách làm an toàn — KHÔNG chèn gì vào cây DOM của YouTube (từng làm hỏng trình phát):
+    //   • 1 canvas riêng gắn vào <body>, nằm SAU toàn bộ trang (z-index -1), to hơn trình phát
+    //     → phần lộ ra quanh trình phát chính là màu viền của khung hình (như đèn hắt sau TV).
+    //   • Khi bật: class "fg-ambient-on" trên <html> → CSS làm trong suốt nền khung trang để thấy lớp sáng,
+    //     ẩn "Chế độ môi trường" gốc của YouTube (tránh 2 lớp).
+    // Hiệu năng: canvas 64×36, 10 khung/giây, dừng hẳn khi video tạm dừng / tab ẩn.
+    const AMB_W = 64, AMB_H = 36;
+    const AMB_SPREAD_X = 0.2, AMB_SPREAD_Y = 0.26; // toả ra mỗi phía (theo tỉ lệ kích thước trình phát)
     let amb = { canvas: null, ctx: null, player: null, timer: null, ro: null, drew: false };
 
     const AMB_STYLE = {
-        position: "absolute", zIndex: "1", pointerEvents: "none", display: "block", margin: "0",
-        mixBlendMode: "screen", filter: "blur(36px) saturate(1.9) brightness(1.25)", opacity: "0.75",
-        webkitMaskImage: "linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%), linear-gradient(to bottom, #000 0%, rgba(0,0,0,0.6) 35%, transparent 100%)",
-        maskImage: "linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%), linear-gradient(to bottom, #000 0%, rgba(0,0,0,0.6) 35%, transparent 100%)",
-        webkitMaskComposite: "source-in",
-        maskComposite: "intersect",
+        position: "absolute", zIndex: "-1", pointerEvents: "none", display: "block", margin: "0",
+        filter: "blur(72px) saturate(1.6) brightness(1.1)", opacity: "0.9", transform: "translateZ(0)",
+        borderRadius: "40px",
     };
 
     function ambientWanted() {
@@ -942,6 +943,7 @@
         if (amb.timer) clearInterval(amb.timer);
         if (amb.ro) amb.ro.disconnect();
         if (amb.canvas) amb.canvas.remove();
+        document.documentElement.classList.remove("fg-ambient-on");
         amb = { canvas: null, ctx: null, player: null, timer: null, ro: null, drew: false };
     }
 
@@ -955,14 +957,14 @@
         }
         const vw = document.documentElement.clientWidth || window.innerWidth;
         const sx = window.scrollX || 0, sy = window.scrollY || 0;
-        const left = Math.max(pr.left - pr.width * 0.04, 0);
-        const right = Math.min(pr.right + pr.width * 0.04, vw);
-        // Toạ độ theo tài liệu → tự cuộn theo trang, không cần nghe sự kiện cuộn
+        // Không vượt mép màn hình theo chiều ngang (tránh thanh cuộn ngang); ánh mờ vẫn lan tới sát mép
+        const left = Math.max(pr.left - pr.width * AMB_SPREAD_X, 0);
+        const right = Math.min(pr.right + pr.width * AMB_SPREAD_X, vw);
         const next = {
             left: (left + sx) + "px",
-            top: (pr.bottom + sy) + "px",       // bắt đầu ĐÚNG mép dưới trình phát → không đè lên video
+            top: (pr.top - pr.height * AMB_SPREAD_Y + sy) + "px",
             width: Math.max(0, right - left) + "px",
-            height: (pr.height * 0.48) + "px",
+            height: (pr.height * (1 + 2 * AMB_SPREAD_Y)) + "px",
             visibility: "visible",
         };
         for (const k in next) if (st[k] !== next[k]) st[k] = next[k];
@@ -973,15 +975,10 @@
         const ctx = amb.ctx;
         if (!ctx || !video || video.readyState < 2) return;
         try {
-            // Lật dọc: mép dưới khung hình nằm sát mép dưới trình phát, như phản chiếu
-            ctx.globalAlpha = alpha;
-            ctx.setTransform(1, 0, 0, -1, 0, AMB_H);
+            ctx.globalAlpha = alpha; // cộng dồn khung → chuyển màu mượt, không nháy
             ctx.drawImage(video, 0, 0, AMB_W, AMB_H);
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
             amb.drew = true;
-        } catch {
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-        }
+        } catch { /* khung hình chưa sẵn sàng */ }
     }
 
     function ensureAmbient() {
@@ -999,18 +996,21 @@
             Object.assign(canvas.style, AMB_STYLE);
             document.body.appendChild(canvas);
             amb = { canvas, ctx: canvas.getContext("2d", { alpha: false }), player, timer: null, ro: null, drew: false };
-            if (amb.ctx) { amb.ctx.fillStyle = "#000"; amb.ctx.fillRect(0, 0, AMB_W, AMB_H); }
+            if (amb.ctx) { amb.ctx.fillStyle = "#0f0f0f"; amb.ctx.fillRect(0, 0, AMB_W, AMB_H); }
             try {
                 amb.ro = new ResizeObserver(layoutAmbient);
                 amb.ro.observe(player);
             } catch { /* trình duyệt cũ: vòng quét 300ms vẫn tự căn lại */ }
+        }
+        if (!document.documentElement.classList.contains("fg-ambient-on")) {
+            document.documentElement.classList.add("fg-ambient-on");
         }
         layoutAmbient();
 
         const video = playerVideo(player);
         const playing = !!video && !video.paused && !video.ended && realVisibility() === "visible";
         if (!amb.drew && video && video.readyState >= 2) drawAmbient(1); // khung đầu tiên (kể cả khi đang dừng)
-        if (playing && !amb.timer) amb.timer = setInterval(() => drawAmbient(0.35), 100);
+        if (playing && !amb.timer) amb.timer = setInterval(() => drawAmbient(0.3), 100);
         if (!playing && amb.timer) { clearInterval(amb.timer); amb.timer = null; } // giữ khung cuối, không tốn CPU
     }
 

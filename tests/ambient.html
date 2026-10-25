@@ -57,7 +57,7 @@ function pixel() {
   check("A2b hoa tron 'screen' (chu trang van trang)", c && getComputedStyle(c).mixBlendMode === "screen");
   const pr = document.getElementById("movie_player").getBoundingClientRect();
   const cr = c ? c.getBoundingClientRect() : {};
-  check("A3 toa xuong phia duoi trinh phat, KHONG de len video", cr.top >= pr.bottom - 1 && cr.bottom > pr.bottom + pr.height * 0.3, `player ${Math.round(pr.top)}-${Math.round(pr.bottom)} glow ${Math.round(cr.top)}-${Math.round(cr.bottom)}`);
+  check("A3 toa xuong phia duoi trinh phat, KHONG de len video", cr.top >= pr.bottom - 1 && cr.bottom > pr.bottom + pr.height * 0.4, `player ${Math.round(pr.top)}-${Math.round(pr.bottom)} glow ${Math.round(cr.top)}-${Math.round(cr.bottom)}`);
   check("A4b chi rong hon trinh phat toi da 4% moi ben", cr.left >= pr.left - pr.width * 0.041 && cr.right <= pr.right + pr.width * 0.041);
   check("A4 khong vuot qua mep man hinh (khong thanh cuon ngang)", cr.left >= 0 && cr.right <= document.documentElement.clientWidth + 0.5 && document.documentElement.scrollWidth <= document.documentElement.clientWidth);
   check("A5 khong chan chuot (pointer-events none)", c && getComputedStyle(c).pointerEvents === "none");
@@ -108,7 +108,7 @@ function pixel() {
   const cc = document.createElement("canvas"); cc.style.cssText = "width:200px;height:100px;display:block"; cin.appendChild(cc);
   document.body.appendChild(cin);
   await sleep(600);
-  check("A16 YouTube da bat Ambient mode goc -> khong ve chong", !amb());
+  check("A16 YouTube bat Ambient mode goc -> van hien phia duoi (bo sung, khong chong)", !!amb());
   cin.remove();
   await sleep(600);
 

@@ -1,0 +1,40 @@
+#fg-mobile-open {
+    position: fixed;
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    z-index: 2147483646;
+    border: 0;
+    border-radius: 999px;
+    padding: 12px 16px;
+    min-height: 44px;
+    font: 700 14px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: #eff6ff;
+    background: #1d4ed8;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    transition: opacity 160ms ease, transform 160ms ease;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#fg-mobile-open.fg-mobile-scrolling {
+    opacity: 0.3;
+    transform: translateX(55%);
+}
+
+#fg-mobile-open:focus-visible {
+    outline: 3px solid #93c5fd;
+    outline-offset: 3px;
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+    #fg-mobile-open {
+        bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+        padding: 10px 13px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #fg-mobile-open {
+        transition: none;
+    }
+}

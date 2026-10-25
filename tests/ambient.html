@@ -6,8 +6,9 @@
   #movie_player { width: 640px; height: 360px; background: #000; border-radius: 12px; overflow: hidden; }
   #movie_player video { width: 100%; height: 100%; display: block; }
   #title { font-size: 20px; font-weight: bold; margin-top: 14px; }
-</style></head>
+</style><link rel="stylesheet" href="/content.css"></head>
 <body>
+<ytd-app style="display:block;background:#0f0f0f">
 <div id="primary"><div id="primary-inner">
   <div id="player"><div id="movie_player" class="html5-video-player">
     <video class="html5-main-video" muted playsinline></video>
@@ -15,6 +16,7 @@
   </div></div>
   <div id="below"><div id="title">PLAYLIST | Tiêu đề video bên dưới phải đọc rõ</div><p>Mô tả, bình luận...</p></div>
 </div></div>
+</ytd-app>
 <pre id="out">RUNNING</pre>
 <script>
 // Nguồn video THẬT: canvas → captureStream → <video>
@@ -54,11 +56,13 @@ function pixel() {
   check("A1 gan vao <body>, KHONG chen vao cay DOM cua YouTube", !!c && c.parentElement === document.body);
   const pi = document.getElementById("primary-inner");
   check("A2 khong sua style phan tu cua YouTube", pi.getAttribute("style") === null && !document.querySelector(".fg-ambient-host"));
-  check("A2b hoa tron 'screen' (chu trang van trang)", c && getComputedStyle(c).mixBlendMode === "screen");
+  check("A2b nam SAU toan bo trang (z-index -1)", c && getComputedStyle(c).zIndex === "-1");
+  const app = document.querySelector("ytd-app");
+  check("A2c nen khung trang trong suot de lo anh sang, <html> giu mau toi", getComputedStyle(app).backgroundColor === "rgba(0, 0, 0, 0)" && getComputedStyle(document.documentElement).backgroundColor !== "rgba(0, 0, 0, 0)", getComputedStyle(app).backgroundColor + " / " + getComputedStyle(document.documentElement).backgroundColor);
   const pr = document.getElementById("movie_player").getBoundingClientRect();
   const cr = c ? c.getBoundingClientRect() : {};
-  check("A3 toa xuong phia duoi trinh phat, KHONG de len video", cr.top >= pr.bottom - 1 && cr.bottom > pr.bottom + pr.height * 0.4, `player ${Math.round(pr.top)}-${Math.round(pr.bottom)} glow ${Math.round(cr.top)}-${Math.round(cr.bottom)}`);
-  check("A4b chi rong hon trinh phat toi da 4% moi ben", cr.left >= pr.left - pr.width * 0.041 && cr.right <= pr.right + pr.width * 0.041);
+  check("A3 toa ra QUANH ca 4 phia trinh phat", cr.top < pr.top - pr.height * 0.2 && cr.bottom > pr.bottom + pr.height * 0.2 && cr.left < pr.left && cr.right > pr.right, `player ${Math.round(pr.top)}-${Math.round(pr.bottom)} glow ${Math.round(cr.top)}-${Math.round(cr.bottom)}`);
+  check("A4b toa sang 2 ben toi da 20%", cr.left >= pr.left - pr.width * 0.201 - 1 && cr.right <= pr.right + pr.width * 0.201 + 1);
   check("A4 khong vuot qua mep man hinh (khong thanh cuon ngang)", cr.left >= 0 && cr.right <= document.documentElement.clientWidth + 0.5 && document.documentElement.scrollWidth <= document.documentElement.clientWidth);
   check("A5 khong chan chuot (pointer-events none)", c && getComputedStyle(c).pointerEvents === "none");
   let px = pixel();
@@ -91,7 +95,7 @@ function pixel() {
   // Tắt tính năng
   lic({ ambientGlow: false, pipButton: false, jumpAhead: false, sponsorBlock: false });
   await sleep(600);
-  check("A13 tat tinh nang -> go sach", !amb());
+  check("A13 tat tinh nang -> go sach, tra lai nen trang", !amb() && !document.documentElement.classList.contains("fg-ambient-on") && getComputedStyle(app).backgroundColor === "rgb(15, 15, 15)");
   lic({ ambientGlow: true, pipButton: false, jumpAhead: false, sponsorBlock: false });
   await sleep(600);
   check("A14 bat lai -> hien lai", !!amb());
@@ -108,7 +112,7 @@ function pixel() {
   const cc = document.createElement("canvas"); cc.style.cssText = "width:200px;height:100px;display:block"; cin.appendChild(cc);
   document.body.appendChild(cin);
   await sleep(600);
-  check("A16 YouTube bat Ambient mode goc -> van hien phia duoi (bo sung, khong chong)", !!amb());
+  check("A16 YouTube bat Ambient mode goc -> an ban goc, chi giu 1 lop", !!amb() && getComputedStyle(cin).display === "none");
   cin.remove();
   await sleep(600);
 

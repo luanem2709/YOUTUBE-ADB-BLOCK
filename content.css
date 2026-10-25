@@ -2,7 +2,6 @@
 .ytp-ad-text-overlay,
 .ytp-ad-image-overlay,
 .ytp-ad-overlay-container,
-.ytp-ad-player-overlay,
 ytd-companion-slot-renderer,
 ytd-promoted-sparkles-web-renderer,
 ytd-display-ad-renderer,
@@ -22,7 +21,8 @@ ytm-display-ad-renderer,
 ytm-ad-slot-renderer,
 ytm-in-feed-ad-layout-renderer,
 ytd-enforcement-message-view-model,
-.ytd-enforcement-message-view-model {
+.ytd-enforcement-message-view-model,
+bka-enforcement-message-view-model {
     display: none !important;
 }
 
@@ -36,3 +36,72 @@ body.yt-dialog-scroll-disable {
     overflow: auto !important;
     overflow-y: auto !important;
 }
+
+/* Premium: ẩn lời mời mua YouTube Premium / Music Premium (bật bằng html.fg-hide-upsell) */
+html.fg-hide-upsell ytd-mealbar-promo-renderer,
+html.fg-hide-upsell yt-mealbar-promo-renderer,
+html.fg-hide-upsell ytm-mealbar-promo-renderer,
+html.fg-hide-upsell ytmusic-mealbar-promo-renderer,
+html.fg-hide-upsell ytd-statement-banner-renderer,
+html.fg-hide-upsell ytmusic-statement-banner-renderer,
+html.fg-hide-upsell ytd-primetime-promo-renderer,
+html.fg-hide-upsell ytd-brand-video-singleton-renderer,
+html.fg-hide-upsell ytd-brand-video-shelf-renderer,
+html.fg-hide-upsell ytd-background-promo-renderer,
+html.fg-hide-upsell tp-yt-paper-dialog:has(yt-mealbar-promo-renderer),
+html.fg-hide-upsell tp-yt-paper-dialog:has(ytd-mealbar-promo-renderer),
+html.fg-hide-upsell ytmusic-popup-container tp-yt-paper-dialog:has(ytmusic-mealbar-promo-renderer) {
+    display: none !important;
+}
+
+/* Premium: nút Hình trong hình trên thanh điều khiển */
+.fg-pip-button {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+}
+.fg-pip-button svg {
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+/* Nút "Nhảy tới đoạn hay nhất" */
+.fg-jump-button {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+}
+.fg-jump-button svg {
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+/* Thông báo nhỏ trên trình phát (SponsorBlock, Jump ahead) */
+.fg-toast {
+    position: absolute;
+    left: 50%;
+    bottom: 64px;
+    transform: translate(-50%, 8px);
+    z-index: 70;
+    max-width: 80%;
+    padding: 8px 14px;
+    border-radius: 18px;
+    background: rgba(15, 15, 20, 0.86);
+    color: #fff;
+    font: 500 13px/1.4 "Roboto", "Segoe UI", Arial, sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.fg-toast.fg-toast-show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+/* Hiệu ứng ánh sáng nền (Ambient glow): style đặt trực tiếp trong content-main.js */
+.fg-ambient { pointer-events: none !important; }

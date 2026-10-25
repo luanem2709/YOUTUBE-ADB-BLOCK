@@ -1042,6 +1042,38 @@
     // Cho bộ test truy cập hàm thuần (không ảnh hưởng hoạt động)
     if (window.__FG_TEST__) window.__FG_TEST__.main = { pickJumpTarget, extractHeatMarkers, heatFromDom };
 
+    // ---------- Báo lỗi quảng cáo: chụp nhanh trạng thái trình phát (không gửi đi đâu, chỉ chép vào clipboard) ----------
+    function describeEl(e) {
+        return e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + (e.classList.length ? "." + [...e.classList].join(".") : "");
+    }
+
+    function collectDiagnostics() {
+        const p = mainPlayer();
+        const v = playerVideo(p);
+        const visible = (e) => e.offsetWidth > 0 || e.offsetHeight > 0;
+        const adParts = p ? [...new Set([...p.querySelectorAll("[class*='ad'],[class*='sponsor']")]
+            .filter(visible).map(describeEl))].slice(0, 40) : [];
+        const skipButtons = p ? [...p.querySelectorAll("button,[role='button']")]
+            .filter((b) => visible(b) && /bỏ qua|bo qua|skip/i.test((b.textContent || "") + " " + (b.getAttribute("aria-label") || "")))
+            .map((b) => b.outerHTML.slice(0, 300)).slice(0, 5) : [];
+        const pagePanels = [...document.querySelectorAll("#below *, #secondary *, #panels *")]
+            .filter((e) => /(^|-)ads?(-|$)|sponsor|promoted|companion/i.test(e.tagName) && visible(e))
+            .map(describeEl).slice(0, 20);
+        return {
+            path: location.pathname + location.search.slice(0, 40),
+            playerClass: p ? p.className : null,
+            adShowing: hasAdClass(p),
+            confirmedAd: p ? isConfirmedAd(p) : false,
+            video: v ? { duration: v.duration, time: v.currentTime, rate: v.playbackRate, muted: v.muted, paused: v.paused } : null,
+            adParts,
+            skipButtons,
+            pagePanels: [...new Set(pagePanels)],
+            settings: fgSettings,
+            whitelisted: isWhitelistedChannel,
+            licensed: allowLicense,
+        };
+    }
+
     // ---------- Giao tiếp với content script ----------
     function applyConfig(msg) {
         if (msg.settings && typeof msg.settings === "object") fgSettings = { ...fgSettings, ...msg.settings };
@@ -1070,6 +1102,10 @@
 
         if (msg.type === "FG_CONFIG") { applyConfig(msg); return; }
         if (msg.type === "FG_SB") { receiveSponsorSegments(msg); return; }
+        if (msg.type === "FG_DIAG_REQ") {
+            window.postMessage({ type: "FG_DIAG_RES", token: FG_TOKEN, id: msg.id, data: collectDiagnostics() }, "*");
+            return;
+        }
         if (!allowLicense || isWhitelistedChannel) return;
 
         if (msg.type === "FG_DISMISS") dismissDialogs();

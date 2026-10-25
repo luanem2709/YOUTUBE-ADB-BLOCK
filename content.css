@@ -103,5 +103,21 @@ html.fg-hide-upsell ytmusic-popup-container tp-yt-paper-dialog:has(ytmusic-mealb
     transform: translate(-50%, 0);
 }
 
-/* Hiệu ứng ánh sáng nền (Ambient glow): style đặt trực tiếp trong content-main.js */
+/* Hiệu ứng ánh sáng nền kiểu "Ambient light": canvas .fg-ambient nằm sau trang (gắn vào <body>).
+   Khi bật (html.fg-ambient-on): nền trang giữ màu tối ở <html>, các lớp khung trang trong suốt để lộ ánh sáng. */
 .fg-ambient { pointer-events: none !important; }
+html.fg-ambient-on {
+    background-color: var(--yt-spec-base-background, #0f0f0f) !important;
+}
+html.fg-ambient-on body,
+html.fg-ambient-on ytd-app,
+html.fg-ambient-on ytd-page-manager,
+html.fg-ambient-on ytd-watch-flexy,
+html.fg-ambient-on ytd-watch-flexy #columns {
+    background: transparent !important;
+}
+/* Ẩn "Chế độ môi trường" gốc của YouTube khi đang dùng hiệu ứng này (tránh 2 lớp chồng nhau) */
+html.fg-ambient-on #cinematics,
+html.fg-ambient-on #cinematics-container {
+    display: none !important;
+}

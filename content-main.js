@@ -30,7 +30,7 @@
         ".ytp-ad-avatar",
         ".ytp-ad-headline",
         ".ytp-ad-call-to-action",
-        "[class*='ytp-ad-']:not(.ytp-ad-module):not(.video-ads):not(.ytp-ad-overlay-container):not(.ytp-ad-persistent-progress-bar-container)",
+        "[class*='ytp-ad-']:not(.ytp-ad-module):not(.video-ads):not(.ytp-ad-overlay-container):not([class*='progress']):not(.ytp-progress-bar-container *):not(.ytp-chrome-bottom .ytp-progress-bar *)",
     ];
     let AD_SIGNAL_STR = AD_SIGNAL_STR_BASE.join(",");
 

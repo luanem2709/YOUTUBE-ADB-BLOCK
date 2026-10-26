@@ -249,11 +249,25 @@
         setTimeout(() => watchdog(player), 400);
     }
 
+    // Dispatch chuỗi sự kiện chuột đầy đủ — YouTube interstitial bỏ qua .click() đơn thuần
+    function fireClick(el) {
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
+        try { el.dispatchEvent(new MouseEvent("pointerover", opts)); } catch { /* ignore */ }
+        try { el.dispatchEvent(new MouseEvent("mouseover", opts)); } catch { /* ignore */ }
+        try { el.dispatchEvent(new MouseEvent("mousedown", opts)); } catch { /* ignore */ }
+        try { el.dispatchEvent(new MouseEvent("mouseup", opts)); } catch { /* ignore */ }
+        try { el.click(); } catch { /* ignore */ }
+        try { el.dispatchEvent(new MouseEvent("click", opts)); } catch { /* ignore */ }
+    }
+
     function clickSkip(player) {
         const btns = player.querySelectorAll(SKIP_STR);
         for (let i = 0; i < btns.length; i++) {
             if (isVisibleEl(btns[i])) {
-                try { btns[i].click(); } catch { /* ignore */ }
+                fireClick(btns[i]);
                 return true;
             }
         }
@@ -262,7 +276,7 @@
             const b = zone[i];
             const label = (b.getAttribute("aria-label") || b.textContent || "").trim();
             if (label && SKIP_TEXT_RE.test(label) && isVisibleEl(b)) {
-                try { b.click(); } catch { /* ignore */ }
+                fireClick(b);
                 return true;
             }
         }

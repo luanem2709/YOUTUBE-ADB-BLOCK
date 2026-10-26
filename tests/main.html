@@ -228,6 +228,24 @@ function addBadge(p) { const b = document.createElement("div"); b.className = "y
   await sleep(600);
   check("17g het QC interstitial -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
 
+  // 17h. fireClick: nút skip chỉ lắng nghe mousedown (không lắng nghe click event) → phải dùng full event sequence
+  let fireClicks = 0, onlyMousedown = 0;
+  const fBtn = document.createElement("button");
+  fBtn.className = "ytp-skip-ad-button";
+  fBtn.style.cssText = "width:100px;height:36px";
+  fBtn.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  // Chỉ đếm mousedown (giống behavior YouTube interstitial thật)
+  fBtn.addEventListener("mousedown", () => onlyMousedown++);
+  fBtn.onclick = () => fireClicks++;
+  mp.querySelector(".video-ads").appendChild(fBtn);
+  mp.classList.add("ad-showing");
+  v.duration = NaN; v.currentTime = 0; v.playbackRate = 1; v.muted = false;
+  await sleep(600);
+  check("17h fireClick gui ca mousedown va click event cho skip button", onlyMousedown > 0, `mousedown=${onlyMousedown} click=${fireClicks}`);
+  mp.classList.remove("ad-showing"); fBtn.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(400);
+
   document.getElementById("out").textContent = results.join("\n");
 })();
 </script>

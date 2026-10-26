@@ -273,14 +273,15 @@
         // Kiểm tra lại ngay trước khi tác động — tránh đụng video chính trong lúc chuyển tiếp
         if (!isConfirmedAd(player)) return;
 
-        if (clickSkip(player)) return;
+        const skipped = clickSkip(player);
 
         if (!video) return;
         if (fgSettings.muteAds && !video.muted) {
             video.muted = true;
             st.weMuted = true;
         }
-        if (fgSettings.fastSkip) {
+        if (!skipped && fgSettings.fastSkip) {
+            // Chỉ tua nhanh khi không có nút skip (không skip được ngay)
             if (video.playbackRate !== 16) {
                 try { video.playbackRate = 16; st.weRated = true; } catch { /* ignore */ }
             }
@@ -289,7 +290,8 @@
                 try { video.currentTime = d - 0.1; } catch { /* ignore */ }
             }
         }
-        if (video.paused && !video.ended) {
+        // Luôn thử phát lại nếu video đang bị dừng (kể cả sau khi click skip)
+        if (video.paused) {
             const p = video.play();
             if (p && typeof p.catch === "function") p.catch(() => {});
         }

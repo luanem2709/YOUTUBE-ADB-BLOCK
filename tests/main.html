@@ -15,6 +15,12 @@ function fakeMedia(v, dur) {
   let t = 0, d = dur;
   Object.defineProperty(v, "duration", { configurable: true, get: () => d, set: (x) => { d = x; } });
   Object.defineProperty(v, "currentTime", { configurable: true, get: () => t, set: (x) => { t = x; } });
+  // Giả lập buffered: luôn buffer đến cuối (trình duyệt thật sẽ buffer theo mạng)
+  Object.defineProperty(v, "buffered", { configurable: true, get: () => ({
+    length: isFinite(d) && d > 0 ? 1 : 0,
+    start: () => 0,
+    end: () => d,
+  }) });
   v.play = () => Promise.resolve();
 }
 const mp = document.getElementById("movie_player");

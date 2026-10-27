@@ -306,6 +306,15 @@
         // Kiểm tra lại ngay trước khi tác động — tránh đụng video chính trong lúc chuyển tiếp
         if (!isConfirmedAd(player)) return;
 
+        // Ưu tiên 1: YouTube Player API cancelAd() — hủy QC tức thì, không cần tìm nút
+        try {
+            if (typeof player.cancelAd === "function") {
+                player.cancelAd();
+                return;
+            }
+        } catch { /* ignore — API không khả dụng */ }
+
+        // Ưu tiên 2: Click nút skip/Bỏ qua
         const skipped = clickSkip(player);
 
         if (!video) return;
@@ -319,8 +328,22 @@
                 try { video.playbackRate = 16; st.weRated = true; } catch { /* ignore */ }
             }
             const d = video.duration;
+            // Chỉ seek nếu vị trí cuối đã được buffer (tránh lỗi network khi seek vào vùng chưa load)
             if (isFinite(d) && d > 0.5 && video.currentTime < d - 0.3) {
-                try { video.currentTime = d - 0.1; } catch { /* ignore */ }
+                let canSeek = true; // mặc định cho phép seek (môi trường test / buffered không hỗ trợ)
+                try {
+                    const buf = video.buffered;
+                    if (buf && buf.length > 0) {
+                        // Chỉ skip check nếu có data buffered (tránh block ở môi trường không có buffered)
+                        canSeek = false;
+                        for (let i = 0; i < buf.length; i++) {
+                            if (buf.end(i) >= d - 0.5) { canSeek = true; break; }
+                        }
+                    }
+                } catch { /* ignore — API không khả dụng, cho phép seek */ }
+                if (canSeek) {
+                    try { video.currentTime = d - 0.1; } catch { /* ignore */ }
+                }
             }
         }
         // Phát lại nếu video đang paused VÀ chưa kết thúc

@@ -264,6 +264,7 @@
     }
 
     function clickSkip(player) {
+        // Pass 1: selector chuẩn + check visible đầy đủ
         const btns = player.querySelectorAll(SKIP_STR);
         for (let i = 0; i < btns.length; i++) {
             if (isVisibleEl(btns[i])) {
@@ -271,6 +272,19 @@
                 return true;
             }
         }
+        // Pass 2: selector chuẩn nhưng chỉ cần isConnected (không cần box size)
+        // — nút skip interstitial đôi khi chưa có kích thước do layout chưa hoàn tất
+        for (let i = 0; i < btns.length; i++) {
+            const b = btns[i];
+            if (b.isConnected) {
+                const style = window.getComputedStyle(b);
+                if (style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0") {
+                    fireClick(b);
+                    return true;
+                }
+            }
+        }
+        // Pass 3: tìm theo chữ trong vùng QC
         const zone = player.querySelectorAll(AD_ZONE_BUTTONS);
         for (let i = 0; i < zone.length; i++) {
             const b = zone[i];

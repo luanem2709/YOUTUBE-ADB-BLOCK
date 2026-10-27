@@ -46,12 +46,17 @@
         "button[class*='skip-ad']",
         "button[class*='ad-skip']",
         "[id^='skip-button'] button",
+        // Nút "Tiếp tục xem" sau QC video dài (sponsored content)
+        ".ytp-ad-button-vm",
+        "button.ytp-ad-button-vm",
+        ".ytp-video-interstitial-slot__action button",
+        ".ytp-ad-overlay-close-container button",
     ];
     let SKIP_STR = SKIP_STR_BASE.join(",");
 
-    // Nút "Bỏ qua" kiểu mới (đổi tên class): tìm theo chữ, CHỈ trong vùng quảng cáo → không bấm nhầm nút khác
+    // Nút "Bỏ qua" / "Tiếp tục" kiểu mới: tìm theo chữ, CHỈ trong vùng quảng cáo → không bấm nhầm nút khác
     const AD_ZONE_BUTTONS = ".video-ads button, .ytp-ad-module button, [class*='ytp-ad-'] button, [class*='ytp-ad-'] [role='button']";
-    const SKIP_TEXT_RE = /^\s*(bỏ qua|bo qua|skip)(\s*(quảng cáo|quang cao|ads?|video))?\s*[›>▶▸⏭]?\s*$/i;
+    const SKIP_TEXT_RE = /^\s*(bỏ qua|bo qua|skip|tiếp tục|tiep tuc|continue|next|xem tiếp)((\s*(quảng cáo|quang cao|ads?|video))|\s*>+)?\s*[›>▶▸⏭]?\s*$/i;
 
     const ANTI_ADBLOCK_SELECTOR_STR_BASE = [
         "ytd-enforcement-message-view-model",
@@ -318,8 +323,9 @@
                 try { video.currentTime = d - 0.1; } catch { /* ignore */ }
             }
         }
-        // Luôn thử phát lại nếu video đang bị dừng (kể cả sau khi click skip)
-        if (video.paused) {
+        // Phát lại nếu video đang paused VÀ chưa kết thúc
+        // (không play khi ended=true — sẽ restart video QC từ đầu)
+        if (video.paused && !video.ended) {
             const p = video.play();
             if (p && typeof p.catch === "function") p.catch(() => {});
         }

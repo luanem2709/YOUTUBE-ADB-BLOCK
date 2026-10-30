@@ -15,6 +15,7 @@
         ".ytp-ad-player-overlay-instream-info",
         ".ytp-ad-simple-ad-badge",
         ".ytp-ad-badge",
+        ".ytp-ad-badge--clean-player",
         ".ytp-ad-duration-remaining",
         ".ytp-ad-preview-container",
         ".ytp-ad-preview-text",
@@ -23,10 +24,12 @@
         ".ytp-ad-visit-advertiser-button",
         ".ytp-visit-advertiser-link",
         ".ytp-skip-ad-button",
+        ".ytp-skip-ad-button-fix-fullscreen-grid",
         ".ytp-ad-skip-button",
         ".ytp-ad-skip-button-modern",
         ".ytp-ad-skip-button-slot",
         ".ytp-ad-action-interstitial",
+        ".ytp-video-interstitial-buttoned-centered-layout",
         ".ytp-ad-avatar",
         ".ytp-ad-headline",
         ".ytp-ad-call-to-action",
@@ -36,6 +39,10 @@
 
     const SKIP_STR_BASE = [
         "button.ytp-skip-ad-button",
+        "button.ytp-skip-ad-button-fix-fullscreen-grid",
+        "button[id^='skip-button']",
+        ".ytp-skip-ad-button",
+        ".ytp-skip-ad-button-fix-fullscreen-grid",
         "button.ytp-ad-skip-button",
         "button.ytp-ad-skip-button-modern",
         ".ytp-ad-skip-button-slot button",
@@ -46,17 +53,12 @@
         "button[class*='skip-ad']",
         "button[class*='ad-skip']",
         "[id^='skip-button'] button",
-        // Nút "Tiếp tục xem" sau QC video dài (sponsored content)
-        ".ytp-ad-button-vm",
-        "button.ytp-ad-button-vm",
-        ".ytp-video-interstitial-slot__action button",
-        ".ytp-ad-overlay-close-container button",
     ];
     let SKIP_STR = SKIP_STR_BASE.join(",");
 
-    // Nút "Bỏ qua" / "Tiếp tục" kiểu mới: tìm theo chữ, CHỈ trong vùng quảng cáo → không bấm nhầm nút khác
+    // Nút "Bỏ qua" kiểu mới (đổi tên class): tìm theo chữ, CHỈ trong vùng quảng cáo → không bấm nhầm nút khác
     const AD_ZONE_BUTTONS = ".video-ads button, .ytp-ad-module button, [class*='ytp-ad-'] button, [class*='ytp-ad-'] [role='button']";
-    const SKIP_TEXT_RE = /^\s*(bỏ qua|bo qua|skip|tiếp tục|tiep tuc|continue|next|xem tiếp)((\s*(quảng cáo|quang cao|ads?|video))|\s*>+)?\s*[›>▶▸⏭]?\s*$/i;
+    const SKIP_TEXT_RE = /^\s*(bỏ qua|bo qua|skip)(\s*(quảng cáo|quang cao|ads?|video))?\s*[›>▶▸⏭]?\s*$/i;
 
     const ANTI_ADBLOCK_SELECTOR_STR_BASE = [
         "ytd-enforcement-message-view-model",
@@ -92,11 +94,13 @@
     let isWhitelistedChannel = false;
 
     // ---------- Cấu hình từ xa (đã được content script làm sạch) ----------
-    function mergeSelectors(base, extra) {
+    function mergeSelectors(base, extra, isSkip) {
         const out = base.slice();
         if (Array.isArray(extra)) {
             for (const sel of extra) {
                 if (typeof sel !== "string" || out.includes(sel)) continue;
+                // Không nhận selector CTA nhà quảng cáo hoặc khung bao rỗng từ bộ nhớ đệm cũ
+                if (isSkip && (/ytp-ad-button|ad-clickable|call-to-action/.test(sel) || /^\.ytp-ad-skip-button-slot\s*$/.test(sel))) continue;
                 try { document.createDocumentFragment().querySelector(sel); out.push(sel); } catch { /* bỏ selector lỗi */ }
             }
         }
@@ -105,9 +109,9 @@
 
     function applyRemote(remote) {
         if (!remote || typeof remote !== "object") return;
-        AD_SIGNAL_STR = mergeSelectors(AD_SIGNAL_STR_BASE, remote.adSignals);
-        SKIP_STR = mergeSelectors(SKIP_STR_BASE, remote.skipButtons);
-        ANTI_ADBLOCK_SELECTOR_STR = mergeSelectors(ANTI_ADBLOCK_SELECTOR_STR_BASE, remote.antiAdblock);
+        AD_SIGNAL_STR = mergeSelectors(AD_SIGNAL_STR_BASE, remote.adSignals, false);
+        SKIP_STR = mergeSelectors(SKIP_STR_BASE, remote.skipButtons, true);
+        ANTI_ADBLOCK_SELECTOR_STR = mergeSelectors(ANTI_ADBLOCK_SELECTOR_STR_BASE, remote.antiAdblock, false);
     }
 
     function adBlockingActive() {
@@ -175,7 +179,7 @@
     function isVisibleEl(el) {
         if (!hasBox(el)) return false;
         const style = window.getComputedStyle(el);
-        return style.display !== "none" && style.visibility !== "hidden";
+        return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
     }
 
     function playerVideo(player) {
@@ -227,19 +231,53 @@
         return st;
     }
 
+    let fastAdTimer = null;
+    function startFastAdLoop() {
+        if (fastAdTimer) return;
+        fastAdTimer = setInterval(() => {
+            const p = mainPlayer();
+            if (!p || !hasAdClass(p)) {
+                clearInterval(fastAdTimer);
+                fastAdTimer = null;
+                if (p) processPlayer(p);
+                return;
+            }
+            processPlayer(p);
+        }, 35);
+    }
+
+    function stopFastAdLoop() {
+        if (fastAdTimer) {
+            clearInterval(fastAdTimer);
+            fastAdTimer = null;
+        }
+    }
+
     function enterAd(player, st, video) {
         st.active = true;
         st.video = video;
         st.savedRate = userRate(player, video);
         st.weMuted = false;
         st.weRated = false;
+        st.lastDur = 0;
+        st.seekedEnd = false;
+        st.seeked5 = false;
+        if (video) {
+            try { video.style.opacity = "0"; } catch { /* ignore */ }
+        }
+        startFastAdLoop();
         postCount("video");
     }
 
     function exitAd(player, st) {
         st.active = false;
+        st.lastDur = 0;
+        st.seekedEnd = false;
+        st.seeked5 = false;
+        stopFastAdLoop();
         const video = playerVideo(player) || st.video;
         if (video) {
+            try { video.style.opacity = ""; } catch { /* ignore */ }
             if (st.weRated && video.playbackRate !== st.savedRate) {
                 try { video.playbackRate = st.savedRate; } catch { /* ignore */ }
             }
@@ -251,54 +289,79 @@
         st.weRated = false;
         st.video = null;
         // YouTube có thể nạp lại video chính sau vài trăm ms — kiểm tra lại lần nữa
-        setTimeout(() => watchdog(player), 400);
+        setTimeout(() => {
+            watchdog(player);
+            if (player.id === "movie_player") resumeMainPlayer();
+        }, 400);
     }
 
-    // Dispatch chuỗi sự kiện chuột đầy đủ — YouTube interstitial bỏ qua .click() đơn thuần
+    // Dispatch chuỗi sự kiện chuột & pointer đầy đủ — YouTube interstitial bỏ qua .click() đơn thuần
     function fireClick(el) {
         const rect = el.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
         const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
+        try { el.dispatchEvent(new PointerEvent("pointerover", opts)); } catch { /* ignore */ }
         try { el.dispatchEvent(new MouseEvent("pointerover", opts)); } catch { /* ignore */ }
         try { el.dispatchEvent(new MouseEvent("mouseover", opts)); } catch { /* ignore */ }
+        try { el.dispatchEvent(new PointerEvent("pointerdown", opts)); } catch { /* ignore */ }
         try { el.dispatchEvent(new MouseEvent("mousedown", opts)); } catch { /* ignore */ }
+        try { el.dispatchEvent(new PointerEvent("pointerup", opts)); } catch { /* ignore */ }
         try { el.dispatchEvent(new MouseEvent("mouseup", opts)); } catch { /* ignore */ }
         try { el.click(); } catch { /* ignore */ }
         try { el.dispatchEvent(new MouseEvent("click", opts)); } catch { /* ignore */ }
     }
 
+    function isCtaOrLink(el) {
+        if (!el || !el.closest) return false;
+        return !!el.closest("a[href], .ytp-ad-button-vm, .ytp-ad-button-link, .ytp-ad-call-to-action, .ytp-ad-hover-text-button, .ytp-visit-advertiser-button, .ytp-visit-advertiser-link");
+    }
+
+    function triggerSkipButton(player, b, now) {
+        if (b.__fgClickAt && now - b.__fgClickAt < 150) return false;
+        b.__fgClickAt = now;
+        fireClick(b);
+        const inner = b.querySelector && b.querySelector(".ytp-skip-ad-button__text, .ytp-ad-skip-button__text");
+        if (inner && inner !== b) fireClick(inner);
+        try {
+            if (typeof player.skipAd === "function") player.skipAd();
+        } catch { /* ignore */ }
+        return true;
+    }
+
     function clickSkip(player) {
-        // Pass 1: selector chuẩn + check visible đầy đủ
+        const now = Date.now();
+        // Pass 1: selector chuẩn + check visible đầy đủ (hasBox bảo đảm không bấm nút đang ẩn)
         const btns = player.querySelectorAll(SKIP_STR);
         for (let i = 0; i < btns.length; i++) {
-            if (isVisibleEl(btns[i])) {
-                fireClick(btns[i]);
-                return true;
-            }
+            const raw = btns[i];
+            if (isCtaOrLink(raw) || !isVisibleEl(raw)) continue;
+            const b = (raw.closest && raw.closest("button")) || raw;
+            if (triggerSkipButton(player, b, now)) return true;
         }
-        // Pass 2: selector chuẩn nhưng chỉ cần isConnected (không cần box size)
-        // — nút skip interstitial đôi khi chưa có kích thước do layout chưa hoàn tất
-        for (let i = 0; i < btns.length; i++) {
-            const b = btns[i];
-            if (b.isConnected) {
-                const style = window.getComputedStyle(b);
-                if (style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0") {
-                    fireClick(b);
-                    return true;
-                }
-            }
-        }
-        // Pass 3: tìm theo chữ trong vùng QC
+        // Pass 2: tìm theo chữ "Bỏ qua / Skip" trong vùng QC
         const zone = player.querySelectorAll(AD_ZONE_BUTTONS);
         for (let i = 0; i < zone.length; i++) {
             const b = zone[i];
+            if (isCtaOrLink(b) || !isVisibleEl(b)) continue;
             const label = (b.getAttribute("aria-label") || b.textContent || "").trim();
-            if (label && SKIP_TEXT_RE.test(label) && isVisibleEl(b)) {
-                fireClick(b);
-                return true;
+            if (label && SKIP_TEXT_RE.test(label)) {
+                if (triggerSkipButton(player, b, now)) return true;
             }
         }
+        return false;
+    }
+
+    function isBufferedAt(video, targetTime) {
+        try {
+            const buf = video.buffered;
+            if (!buf || !buf.length) return false;
+            for (let i = 0; i < buf.length; i++) {
+                if (buf.start(i) <= video.currentTime + 0.5 && buf.end(i) >= targetTime) {
+                    return true;
+                }
+            }
+        } catch { /* ignore */ }
         return false;
     }
 
@@ -306,49 +369,41 @@
         // Kiểm tra lại ngay trước khi tác động — tránh đụng video chính trong lúc chuyển tiếp
         if (!isConfirmedAd(player)) return;
 
-        // Ưu tiên 1: YouTube Player API cancelAd() — hủy QC tức thì, không cần tìm nút
-        try {
-            if (typeof player.cancelAd === "function") {
-                player.cancelAd();
-                return;
-            }
-        } catch { /* ignore — API không khả dụng */ }
-
-        // Ưu tiên 2: Click nút skip/Bỏ qua
-        const skipped = clickSkip(player);
+        clickSkip(player);
 
         if (!video) return;
+        if (video.style.opacity !== "0") {
+            try { video.style.opacity = "0"; } catch { /* ignore */ }
+        }
         if (fgSettings.muteAds && !video.muted) {
             video.muted = true;
             st.weMuted = true;
         }
-        if (!skipped && fgSettings.fastSkip) {
-            // Chỉ tua nhanh khi không có nút skip (không skip được ngay)
+        if (fgSettings.fastSkip && !video.ended && !player.classList.contains("ended-mode")) {
             if (video.playbackRate !== 16) {
                 try { video.playbackRate = 16; st.weRated = true; } catch { /* ignore */ }
             }
             const d = video.duration;
-            // Chỉ seek nếu vị trí cuối đã được buffer (tránh lỗi network khi seek vào vùng chưa load)
-            if (isFinite(d) && d > 0.5 && video.currentTime < d - 0.3) {
-                let canSeek = true; // mặc định cho phép seek (môi trường test / buffered không hỗ trợ)
-                try {
-                    const buf = video.buffered;
-                    if (buf && buf.length > 0) {
-                        // Chỉ skip check nếu có data buffered (tránh block ở môi trường không có buffered)
-                        canSeek = false;
-                        for (let i = 0; i < buf.length; i++) {
-                            if (buf.end(i) >= d - 0.5) { canSeek = true; break; }
-                        }
-                    }
-                } catch { /* ignore — API không khả dụng, cho phép seek */ }
-                if (canSeek) {
-                    try { video.currentTime = d - 0.1; } catch { /* ignore */ }
+            if (isFinite(d) && d > 0.5) {
+                if (Math.abs(d - (st.lastDur || 0)) > 0.5) {
+                    st.lastDur = d;
+                    st.seekedEnd = false;
+                    st.seeked5 = false;
+                }
+                // 1) Nếu toàn bộ QC đã nằm trong vùng buffer (QC ngắn) → nhảy thẳng tới d - 0.15 tức thì
+                if (!st.seekedEnd && video.currentTime < d - 0.3 && isBufferedAt(video, d - 0.1)) {
+                    st.seekedEnd = true;
+                    try { video.currentTime = d - 0.15; } catch { /* ignore */ }
+                } else if (!st.seeked5 && d > 15 && video.currentTime < 4.8 && isBufferedAt(video, 5.2)) {
+                    // 2) Nếu QC dài (30s+) chưa buffer tới cuối nhưng đã buffer qua mốc 5s → nhảy thẳng tới 5.0s
+                    // để mở khoá nút "Bỏ qua" ngay lập tức mà không làm treo bộ đệm ở cuối video
+                    st.seeked5 = true;
+                    try { video.currentTime = 5.0; } catch { /* ignore */ }
                 }
             }
         }
-        // Phát lại nếu video đang paused VÀ chưa kết thúc
-        // (không play khi ended=true — sẽ restart video QC từ đầu)
-        if (video.paused && !video.ended) {
+        // Phát lại nếu video QC đang bị dừng và chưa kết thúc
+        if (video.paused && !video.ended && !player.classList.contains("ended-mode")) {
             const p = video.play();
             if (p && typeof p.catch === "function") p.catch(() => {});
         }
@@ -361,6 +416,9 @@
         if (st.active || isConfirmedAd(player)) return;
         const video = playerVideo(player);
         if (!video) return;
+        if (video.style.opacity === "0") {
+            try { video.style.opacity = ""; } catch { /* ignore */ }
+        }
         if (video.playbackRate > 4) {
             try { video.playbackRate = userRate(player, null); } catch { /* ignore */ }
         }
@@ -413,6 +471,7 @@
         video.addEventListener("loadedmetadata", onMedia);
         video.addEventListener("playing", onMedia);
         video.addEventListener("ratechange", onMedia);
+        video.addEventListener("timeupdate", onMedia);
         if (player.id === "movie_player") {
             video.addEventListener("pause", onUnexpectedPause);
             video.addEventListener("timeupdate", () => onSponsorTimeUpdate(player, video));

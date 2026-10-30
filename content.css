@@ -37,6 +37,21 @@ ytd-promoted-video-renderer,
     display: none !important;
 }
 
+/* Ẩn toàn bộ lớp giao diện quảng cáo, nhãn "Được tài trợ", nút CTA và nút "Bỏ qua" khỏi mắt người xem.
+   Dùng opacity: 0 trên khung cha (.video-ads / .ytp-ad-module) thay vì display: none để các nút bên trong
+   vẫn giữ nguyên kích thước (offsetWidth > 0) cho bộ auto-skip phát hiện và bấm tức thì. */
+.html5-video-player.ad-showing .video-ads,
+.html5-video-player.ad-interrupting .video-ads,
+.html5-video-player.ad-showing .ytp-ad-module,
+.html5-video-player.ad-interrupting .ytp-ad-module,
+.html5-video-player.ad-showing .ytp-ad-player-overlay,
+.html5-video-player.ad-interrupting .ytp-ad-player-overlay,
+.html5-video-player.ad-showing .ytp-ad-progress-list,
+.html5-video-player.ad-interrupting .ytp-ad-progress-list {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 /* Dialog chống QC bị ẩn nhưng YouTube vẫn khóa scroll — mở lại lăn chuột */
 html.iron-overlay-scroll-block,
 html.hidenscroll,

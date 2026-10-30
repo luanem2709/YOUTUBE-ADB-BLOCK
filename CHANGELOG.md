@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.4.8] — 2026-10-29
+
+### Sửa — Quảng cáo hiện liên tục / nhảy sang trang quảng cáo
+Nguyên nhân gốc tìm ra từ báo lỗi "Báo lỗi QC" (v2.4.7): trong layout interstitial của YouTube, **nút CTA của nhà quảng cáo** (`button#ad-button:t.ytp-ad-button-vm`, nằm trong `.ytp-ad-button-container`) **đứng trước** nút "Bỏ qua" (`button#skip-button:y.ytp-skip-ad-button`) trong thứ tự DOM. Vì `querySelectorAll` trả về theo thứ tự DOM nên extension bấm nhầm CTA → trình duyệt nhảy sang trang quảng cáo, đồng thời `clickSkip()` trả `true` khiến **nút "Bỏ qua" không bao giờ được bấm** → QC cứ hiện lại liên tục.
+
+- **Tách nút CTA khỏi nhóm nút "Bỏ qua":** `.ytp-ad-button-vm` bị loại khỏi `SKIP_STR` và chuyển sang nhóm `CONTINUE_STR` (chỉ dùng khi chữ nút khớp "Tiếp tục / Continue", là phương án cuối cùng)
+- **Thêm `isCtaButton()`:** chặn mọi nút CTA của nhà quảng cáo (`.ytp-ad-button-vm`, `.ytp-ad-button`, `.ytp-ad-clickable`, `.ytp-ad-call-to-action`, `.ytp-ad-button-container`, `.ytp-ad-hover-text-button`) và cả nút có lời kêu gọi hành động (Mua ngay, Học thêm, Đăng ký, Learn, Shop, Buy…)
+- **Dò nút skip theo THỨ TỰ ƯU TIÊN** (`SKIP_PRIORITY`) thay vì selector gộp — nút `skip-button` / `.ytp-skip-ad-button` được bấm trước mọi thứ khác
+- **Nav guard không còn `stopPropagation()`:** trước đây chặn event ở capture phase trên `document` khiến handler của YouTube không bao giờ nhận được click → nút "Bỏ qua" không ăn. Giờ chỉ `preventDefault()` (vẫn chặn được điều hướng của thẻ `<a>`)
+- **Bỏ kiểm tra `ancestorsVisible` ở đường bấm nhanh:** nút skip trong layout interstitial có thể nằm trong vùng bị CSS của extension ẩn (`offsetWidth = 0`) nhưng synthetic click vẫn ăn
+- **Thêm observer bao trọn player** (`attachInterstitialWatcher`): layout `.ytp-video-interstitial-buttoned-centered-layout` nằm ngoài `.video-ads` / `.ytp-ad-module` / `.ytp-ad-player-overlay` nên observer cũ không bắt được nút skip vừa xuất hiện
+- **Trần bấm chuyển sang theo từng nút** (tối đa 6 lần/nút) thay vì trần toàn cục 8 lần — trần cũ bị CTA/nút khác "ăn" mất nên hết lượt bấm nút "Bỏ qua"
+- **`fireClick` bổ sung `pointerdown` / `pointerup`:** nút skip interstitial của YouTube dùng PointerEvent để quyết định có "ăn" click hay không
+- Thêm 5 test hồi quy mô phỏng đúng DOM từ báo lỗi (CTA đứng trước nút skip, nút skip trong vùng interstitial ngoài `.video-ads`)
+
 ## [2.4.0] — 2026-10-25
 
 > [!IMPORTANT]

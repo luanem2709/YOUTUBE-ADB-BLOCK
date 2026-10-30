@@ -154,6 +154,20 @@ function cleanSelectors(list) {
     return out;
 }
 
+// Tinh chỉnh tốc độ vượt QC (số học, giới hạn an toàn) — cho phép chỉnh mà không cần phát hành bản mới
+function cleanAdSpeed(sp) {
+    if (!sp || typeof sp !== "object") return null;
+    const n = (x, lo, hi, dflt) => {
+        const v = Number(x);
+        return isFinite(v) && v >= lo && v <= hi ? v : dflt;
+    };
+    return {
+        skipWaitMs: n(sp.skipWaitMs, 0, 15000, 1500),
+        waitRate: n(sp.waitRate, 1, 16, 4),
+        fastAdMaxDuration: n(sp.fastAdMaxDuration, 1, 600, 20),
+    };
+}
+
 function applyRemoteConfig(cfg) {
     const yt = cfg && typeof cfg === "object" && cfg.yt && typeof cfg.yt === "object" ? cfg.yt : {};
     const banners = cleanSelectors(yt.banners);
@@ -162,6 +176,7 @@ function applyRemoteConfig(cfg) {
         adSignals: cleanSelectors(yt.adSignals),
         skipButtons: cleanSelectors(yt.skipButtons),
         antiAdblock: cleanSelectors(yt.antiAdblock),
+        adSpeed: cleanAdSpeed(yt.adSpeed),
     };
 }
 
@@ -433,6 +448,8 @@ function hideCompanionAds() {
 
 let persistTimer = null;
 let pendingBreakdown = null;
+let sessionPersistTimer = null;
+let pendingSessionAds = 0;
 
 function todayKey() {
     const d = new Date();
@@ -596,14 +613,22 @@ function incrementBlockCount(category) {
     clearTimeout(persistTimer);
     persistTimer = setTimeout(flushStats, 1500);
 
-    try {
-        if (chrome.storage.session) {
-            chrome.storage.session.get(["sessionAds"], (result) => {
-                if (chrome.runtime.lastError) return;
-                chrome.storage.session.set({ sessionAds: ((result && result.sessionAds) || 0) + 1 });
-            });
-        }
-    } catch { /* session storage chưa được cấp quyền */ }
+    // Đếm trong bộ nhớ rồi ghi 1 lần (đọc-ghi storage cho MỖI element bị ẩn gây nghẽn I/O
+    // khi quảng cáo render nhiều node → Chrome đứng).
+    pendingSessionAds = (pendingSessionAds || 0) + 1;
+    clearTimeout(sessionPersistTimer);
+    sessionPersistTimer = setTimeout(() => {
+        const n = pendingSessionAds;
+        pendingSessionAds = 0;
+        try {
+            if (chrome.storage.session) {
+                chrome.storage.session.get(["sessionAds"], (result) => {
+                    if (chrome.runtime.lastError) return;
+                    chrome.storage.session.set({ sessionAds: ((result && result.sessionAds) || 0) + n });
+                });
+            }
+        } catch { /* session storage chưa được cấp quyền */ }
+    }, 1500);
 }
 
 initialize();

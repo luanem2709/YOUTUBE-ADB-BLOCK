@@ -1,7 +1,6 @@
 #player-ads,
 .ytp-ad-text-overlay,
 .ytp-ad-image-overlay,
-.ytp-ad-overlay-container,
 ytd-companion-slot-renderer,
 ytd-promoted-sparkles-web-renderer,
 ytd-display-ad-renderer,
@@ -37,19 +36,71 @@ ytd-promoted-video-renderer,
     display: none !important;
 }
 
+/* QUẢNG CÁO MUA SẮM (shopping ads) — kênh bán hàng liên kết (Shopee, Shopee/Lazada...).
+   Đây là dạng quảng cáo hiện MỘT THẺ SẢN PHẨM có giá (ví dụ "Thẻm tập Yoga cao cấp… 125.000₫
+   · Cửa hàng trình liên kết Shopee") — nằm trong bảng "Sản phẩm" bên cạnh video, trong
+   engagement panel, hoặc dán đè lên player (sticker sản phẩm).
+
+   Vì sao cần riêng: đây KHÔNG phải banner quảng cáo chuẩn, nên nhóm selector cũ không bắt được.
+   Bật/tắt bằng class "fg-no-shopping" trên <html> (do content.js bật/tắt theo setting). */
+html.fg-no-shopping ytd-engagement-panel-section-list-renderer[target-id^="shopping_panel"],
+html.fg-no-shopping ytd-engagement-panel-section-list-renderer[target-id*="shopping"],
+html.fg-no-shopping ytd-product-list-renderer,
+html.fg-no-shopping ytd-merch-shelf-renderer,
+html.fg-no-shopping ytd-reel-shopping-shelf-renderer,
+html.fg-no-shopping yt-product-sticker-view-model,
+html.fg-no-shopping ytd-horizontal-card-list-renderer[is-shorts],
+html.fg-no-shopping .ytOverlayProductStickerHost,
+html.fg-no-shopping .ytp-featured-product,
+html.fg-no-shopping .ytp-ad-shopping,
+html.fg-no-shopping .ytp-suggested-action,
+html.fg-no-shopping #sticker-layer,
+html.fg-no-shopping yt-overlay-sticker,
+html.fg-no-shopping ytd-watch-flexy #ticket-shelf,
+html.fg-no-shopping ytd-watch-flexy #pla-shelf,
+html.fg-no-shopping #offer-module,
+html.fg-no-shopping .carousel-offer-url-container {
+    display: none !important;
+}
+
 /* Ẩn toàn bộ lớp giao diện quảng cáo, nhãn "Được tài trợ", nút CTA và nút "Bỏ qua" khỏi mắt người xem.
-   Dùng opacity: 0 trên khung cha (.video-ads / .ytp-ad-module) thay vì display: none để các nút bên trong
-   vẫn giữ nguyên kích thước (offsetWidth > 0) cho bộ auto-skip phát hiện và bấm tức thì. */
+   Dùng opacity: 0 trên khung cha (.video-ads / .ytp-ad-module / .ytp-ad-overlay-container) thay vì
+   display: none để các nút bên trong vẫn giữ nguyên kích thước (offsetWidth > 0) cho bộ auto-skip
+   phát hiện và bấm tức thì.
+   LƯU Ý: .ytp-ad-overlay-container KHÔNG được display:none — nút "Bỏ qua" của YouTube nằm trong đó,
+   display:none làm nút mất kích thước (offsetWidth = 0) nên bộ auto-skip không bấm được.
+
+   BỔ SUNG (fix lỗi thật 2.4.12): YouTube KHÔNG LUÔN gắn "ad-showing"/"ad-interrupting" khi đang
+   phát QC — quan sát thực tế cho thấy player chỉ có "ad-created" + "ytp-branding-shown"
+   (báo cáo 2026-10-31, video j8U06veqxdU). Vì vậy thêm ".ad-created" vào đây, nếu không QC hiện ra
+   vì không có class nào được ẩn. */
 .html5-video-player.ad-showing .video-ads,
 .html5-video-player.ad-interrupting .video-ads,
+.html5-video-player.ad-created .video-ads,
 .html5-video-player.ad-showing .ytp-ad-module,
 .html5-video-player.ad-interrupting .ytp-ad-module,
+.html5-video-player.ad-created .ytp-ad-module,
 .html5-video-player.ad-showing .ytp-ad-player-overlay,
 .html5-video-player.ad-interrupting .ytp-ad-player-overlay,
+.html5-video-player.ad-created .ytp-ad-player-overlay,
+.html5-video-player.ad-showing .ytp-ad-player-overlay-layer,
+.html5-video-player.ad-interrupting .ytp-ad-player-overlay-layer,
+.html5-video-player.ad-created .ytp-ad-player-overlay-layer,
+.html5-video-player.ad-showing .ytp-ad-overlay-container,
+.html5-video-player.ad-interrupting .ytp-ad-overlay-container,
+.html5-video-player.ad-created .ytp-ad-overlay-container,
 .html5-video-player.ad-showing .ytp-ad-progress-list,
-.html5-video-player.ad-interrupting .ytp-ad-progress-list {
+.html5-video-player.ad-interrupting .ytp-ad-progress-list,
+.html5-video-player.ad-created .ytp-ad-progress-list {
     opacity: 0 !important;
     pointer-events: none !important;
+}
+
+/* Khi đang có QC, ẩn nốt lớp phủ QC còn sót lại trên trang (overlay ngoài player) */
+html.fg-ad-active .ytp-ad-overlay-container,
+html.fg-ad-active .ytp-ad-player-overlay,
+html.fg-ad-active .ytp-ad-player-overlay-layer {
+    opacity: 0 !important;
 }
 
 /* Dialog chống QC bị ẩn nhưng YouTube vẫn khóa scroll — mở lại lăn chuột */

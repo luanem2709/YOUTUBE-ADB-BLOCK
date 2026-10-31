@@ -17,6 +17,7 @@ const include = [
     "license.js",
     "content.js",
     "content-main.js",
+    "content-yt-net.js",
     "content.css",
     "content-spotify.js",
     "content-spotify-main.js",
@@ -36,6 +37,15 @@ const include = [
 ];
 
 fs.mkdirSync(path.join(root, "dist"), { recursive: true });
+
+// Don goi build cu (khac phien ban hien tai) de dist/ khong bi nham sai
+const distDir = path.join(root, "dist");
+for (const f of fs.readdirSync(distDir)) {
+    if (!f.endsWith(".zip")) continue;
+    if (f.includes("v" + manifest.version)) continue;
+    fs.rmSync(path.join(distDir, f), { force: true });
+    console.log("  [xoa goi cu] " + f);
+}
 
 if (process.platform === "win32") {
     const staging = path.join(root, "dist", "_staging");

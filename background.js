@@ -13,7 +13,7 @@ const DEFAULTS = {
     adsBlocked: 0,
     dailyGoal: 50,
     whitelistChannels: [],
-    statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 },
+    statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0, shopping: 0, spotify: 0 },
     statsHistory: [],
     userStats: { currentId: "guest", users: {} },
     settings: {
@@ -21,8 +21,10 @@ const DEFAULTS = {
         blockBanner: true,
         blockOverlay: true,
         blockAntiAdblock: true,
+        blockShopping: true,
         muteAds: true,
         fastSkip: true,
+        blockManifest: true,
         blockSpotify: true,
         backgroundPlay: true,
         pipButton: true,
@@ -86,7 +88,7 @@ chrome.alarms.create("funny-remote-config", { periodInMinutes: 360 });
 // Chỉ là DỮ LIỆU (danh sách selector), không phải code → hợp lệ với Manifest V3.
 const REMOTE_CONFIG_URL = "https://raw.githubusercontent.com/luanem2709/YOUTUBE-ADB-BLOCK/main/release/remote-config.json";
 const REMOTE_LISTS = {
-    yt: ["adSignals", "skipButtons", "antiAdblock", "banners"],
+    yt: ["adSignals", "skipButtons", "antiAdblock", "banners", "shopping"],
     spotify: ["adUi", "skipButtons"],
 };
 

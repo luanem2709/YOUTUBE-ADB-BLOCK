@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="/content.css">
+</head>
+<body>
+<div id="movie_player" class="html5-video-player" style="width:640px;height:360px">
+  <video class="html5-main-video" style="width:640px;height:360px"></video>
+  <div class="video-ads ytp-ad-module">
+    <div class="ytp-ad-overlay-container" style="width:400px;height:200px">
+      <button class="ytp-ad-skip-button-slot" style="width:100px;height:36px">Bỏ qua</button>
+    </div>
+  </div>
+</div>
+<pre id="out">RUNNING</pre>
+<script>
+// ---- Mock chrome API (content.js cần chrome.storage / chrome.runtime) ----
+// Hỗ trợ CẢ callback API và Promise API (Chrome thật trả Promise khi không truyền cb).
+const _store = {};
+const _read = (keys) => {
+    const out = {};
+    const list = Array.isArray(keys) ? keys : (typeof keys === "string" ? [keys] : Object.keys(_store));
+    for (const k of list) if (k in _store) out[k] = _store[k];
+    return out;
+};
+window.chrome = {
+    storage: {
+        local: {
+            get: (keys, cb) => {
+                const out = _read(keys);
+                if (typeof cb === "function") { setTimeout(() => cb(out), 0); return; }
+                return Promise.resolve(out);
+            },
+            set: (obj, cb) => {
+                Object.assign(_store, obj);
+                if (typeof cb === "function") { cb(); return; }
+                return Promise.resolve();
+            },
+        },
+        session: {
+            get: (k, cb) => (typeof cb === "function" ? (setTimeout(() => cb({}), 0), undefined) : Promise.resolve({})),
+            set: (o, cb) => { if (typeof cb === "function") cb(); else return Promise.resolve(); },
+        },
+        onChanged: { addListener: () => {} },
+    },
+    runtime: {
+        id: "test",
+        getManifest: () => ({ version: "2.4.9" }),
+        sendMessage: (m, cb) => { if (cb) cb({}); },
+        lastError: null,
+        onMessage: { addListener: () => {} },
+    },
+};
+// Bật extension + key hợp lệ để content.js chạy đầy đủ
+_store.enabled = true;
+_store.settings = { blockOverlay: true, blockBanner: true, blockAntiAdblock: true };
+_store.licenseKey = "TESTKEY123456";
+_store.licenseToken = "tok";
+_store.licenseSig = "sig";
+
+const results = [];
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+window.addEventListener("error", (e) => { results.push("FAIL runtime error: " + e.message + " @" + e.lineno); document.getElementById("out").textContent = results.join("\n"); });
+function check(name, cond, extra) { results.push((cond ? "PASS " : "FAIL ") + name + (extra ? "  [" + extra + "]" : "")); }
+</script>
+<script>
+// KHÔNG nạp /license.js: file đó khai báo `const FunnyLicense` (lexical binding) nên sẽ che
+// mờ mọi gán vào window.FunnyLicense. Ở đây ta chỉ cần license hợp lệ để content.js
+// chạy đầy đủ (isEnabled = true) — nếu không, hideOverlayAds() không bao giờ chạy và
+// các test CSS thành "vacuous" (luôn PASS dù code sai).
+window.FunnyLicense = {
+    verifyStored: async () => ({ ok: true, exp: "2099-12-31" }),
+    load: async () => ({ ok: true, key: "TESTKEY123456", expires: "2099-12-31", label: "", hasToken: true }),
+    recheck: async () => ({ ok: true }),
+    activate: async () => ({ ok: true }),
+    clear: async () => {},
+    isStillValid: () => true,
+    formatExpiry: () => "Không giới hạn",
+    normalizeKey: (k) => String(k || "").toUpperCase().replace(/[^A-Z0-9]/g, ""),
+};
+</script>
+<script src="/content.js"></script>
+<script>
+(async () => {
+ try {
+    const mp = document.getElementById("movie_player");
+    const container = mp.querySelector(".ytp-ad-overlay-container");
+    const skipBtn = mp.querySelector(".ytp-ad-skip-button-slot");
+
+    // 1) content.css KHÔNG được display:none khung chứa nút "Bỏ qua"
+    const cssDisplay = getComputedStyle(container).display;
+    check("C1 css khong display:none khung chua nut skip", cssDisplay !== "none", "display=" + cssDisplay);
+
+    // 2) Sau khi content.js ẩn overlay, nút "Bỏ qua" PHẢI còn kích thước
+    //    (offsetWidth > 0) — nếu bị display:none thì auto-skip không bấm được.
+    mp.classList.add("ad-showing");
+    await sleep(1200);
+    const st = getComputedStyle(container);
+    check("C2 khung overlay khong bi display:none sau khi an", st.display !== "none", "display=" + st.display);
+    check("C3 nut 'Bo qua' van giu kich thuoc", skipBtn.offsetWidth > 0 && skipBtn.offsetHeight > 0,
+        `w=${skipBtn.offsetWidth} h=${skipBtn.offsetHeight}`);
+
+    // 3) Nút phải vẫn "visible" theo cách isVisibleEl() đánh giá trong content-main.js
+    const style = getComputedStyle(skipBtn);
+    const visible = skipBtn.offsetWidth > 0 && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+    check("C4 nut 'Bo qua' van visible theo isVisibleEl", visible,
+        `display=${style.display} visibility=${style.visibility} opacity=${style.opacity}`);
+
+    // 4) Lớp phủ ad khác (text/image overlay) vẫn bị ẩn hoàn toàn
+    const txt = document.createElement("div");
+    txt.className = "ytp-ad-text-overlay";
+    txt.style.cssText = "width:200px;height:40px";
+    mp.querySelector(".video-ads").appendChild(txt);
+    await sleep(1200);
+    check("C5 ytp-ad-text-overlay van bi an", getComputedStyle(txt).display === "none", "display=" + getComputedStyle(txt).display);
+    txt.remove();
+
+    mp.classList.remove("ad-showing");
+    await sleep(600);
+    document.getElementById("out").textContent = results.join("\n");
+ } catch (e) {
+    results.push("FAIL exception: " + (e && e.stack || e));
+    document.getElementById("out").textContent = results.join("\n");
+ }
+})();
+</script>
+</body></html>

@@ -1,6 +1,6 @@
 {
   "name": "funnygame-adblock",
-  "version": "2.4.0",
+  "version": "2.4.15",
   "private": true,
   "description": "FUNNYGAME — Chặn quảng cáo YouTube & Spotify (Chrome extension MV3)",
   "scripts": {

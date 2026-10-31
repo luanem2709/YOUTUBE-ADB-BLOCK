@@ -1,10 +1,32 @@
 {
-  "version": 2,
+  "version": 4,
   "_comment": "Selector BỔ SUNG khi YouTube/Spotify đổi giao diện. Extension tải file này mỗi 6 giờ — sửa ở đây, push lên GitHub là mọi máy nhận được, không cần phát hành bản mới. Chỉ thêm selector CSS (tối đa 100 mục/danh sách, ≤200 ký tự, không chứa { } < >). Tăng 'version' mỗi lần sửa.",
   "yt": {
-    "adSignals": [],
-    "skipButtons": [],
-    "antiAdblock": [],
+    "adSignals": [
+      ".ytp-ad-simple-ad-badge",
+      ".ytp-ad-player-overlay-layer",
+      ".ytp-ad-text-overlay",
+      ".ytp-ad-image-overlay",
+      ".ytp-ad-video-overlay",
+      ".ytp-ad-preview-container",
+      ".ytp-ad-action-interstitial",
+      ".ytp-ad-survey-player-overlay",
+      ".ytp-ad-panels",
+      ".ytp-ad-slot-renderer"
+    ],
+    "skipButtons": [
+      "button.ytp-ad-skip-button-slot",
+      ".ytp-ad-skip-button-modern",
+      ".ytp-ad-skip-button-slot",
+      ".ytp-skip-ad-button-container",
+      ".ytp-ad-survey-player-overlay-skip-or-preview",
+      ".ytp-ad-action-interstitial-skip-button",
+      "button.ytp-skip-ad-button-fix-fullscreen-grid"
+    ],
+    "antiAdblock": [
+      "ytd-enforcement-message-view-model",
+      "bka-enforcement-message-view-model"
+    ],
     "banners": [
       "ytd-engagement-panel-section-list-renderer[target-id='engagement-panel-ads']",
       "ytd-ads-engagement-panel-content-renderer",
@@ -17,6 +39,24 @@
       "ytd-promoted-video-renderer",
       "#below #player-ads",
       "#panels ytd-ads-engagement-panel-content-renderer"
+    ],
+    "shopping": [
+      "ytd-engagement-panel-section-list-renderer[target-id^='shopping_panel_for_entry_point']",
+      "ytd-engagement-panel-section-list-renderer[target-id='shopping_panel']",
+      "ytd-product-list-renderer",
+      "ytd-merch-shelf-renderer",
+      "ytd-reel-shopping-shelf-renderer",
+      "yt-product-sticker-view-model",
+      ".ytOverlayProductStickerHost",
+      ".ytp-featured-product",
+      ".ytp-ad-shopping",
+      ".ytp-suggested-action",
+      "#sticker-layer",
+      "yt-overlay-sticker",
+      "ytd-watch-flexy #ticket-shelf",
+      "ytd-watch-flexy #pla-shelf",
+      "#offer-module",
+      ".carousel-offer-url-container"
     ]
   },
   "spotify": {

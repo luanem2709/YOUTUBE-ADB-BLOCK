@@ -25,3 +25,8 @@ build/
 *.pem
 key.pem
 _metadata/
+
+# Trang test sinh tự động từ HTML gốc (tests/mkpopup.js, tests/mkpages.js)
+tests/popup.test.html
+tests/stats.test.html
+tests/options.test.html

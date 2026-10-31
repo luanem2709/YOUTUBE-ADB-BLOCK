@@ -1,6 +1,6 @@
 # FUNNYGAME — Chặn Quảng Cáo YouTube & Spotify
 
-**v2.4.0** · Extension Chrome / Mobile / Safari (Manifest V3) · Giao diện tiếng Việt · **LuanEm2709**
+**v2.4.11** · Extension Chrome / Mobile / Safari (Manifest V3) · Giao diện tiếng Việt · **LuanEm2709**
 
 Chặn quảng cáo trên **YouTube** (thường, Shorts, Music, mobile web) và **Spotify Web Player**. Cần **Key authentic** để kích hoạt.
 
@@ -12,16 +12,23 @@ Nhập **Key authentic** trong popup (hoặc khi chạy trình cài đặt). Kh�
 
 ### Chặn quảng cáo YouTube (3 lớp tối ưu hiệu năng)
 
-1. **Lọc InnerTube in-place** — gỡ `adPlacements`, `playerAds`, `adSlots`, `adSlotRenderer`, `bkaEnforcementMessageViewModel` và tham số ad-break trước khi player đọc (hook `fetch` / XHR / `JSON.parse` trên endpoint `youtubei`, lọc trực tiếp không clone cây JSON)
+1. **Lọc InnerTube ở tầng mạng** — file `content-yt-net.js` chạy trong MAIN world ở `document_start` (tức là **trước mã của YouTube**), hook `fetch` / `XMLHttpRequest` trên endpoint `/youtubei/v1/player` và gỡ `adPlacements`, `playerAds`, `adSlots` khỏi `playerResponse` → **YouTube không bao giờ nhận được danh sách quảng cáo** nên không tạo slot QC, không tải video QC, không hiện UI QC, không đen màn hình. Đồng thời dò `ytInitialPlayerResponse` / `ytcfg` / `ytplayer.config.args.player_response` để gỡ QC trước khi player đọc. Có **cầu chì tự phục hồi**: nếu gỡ QC làm video lỗi thì tự tắt lớp này và tải lại video bình thường
 2. **DNR** — chặn request tới domain quảng cáo (`doubleclick`, `pagead`, `googleadservices`, `/pagead/`, `ptracking`…)
-3. **DOM fallback thông minh** — skip nút bỏ qua, tua nhanh, mute, ẩn banner/overlay, đóng popup chỉ khi phát hiện quảng cáo thực sự
+3. **DOM fallback thông minh** — gọi `player.skipAd()` ngay khi vào QC (bỏ qua tức thì, không cần đợi nút "Bỏ qua"), bấm nút bỏ qua, tua nhanh 16x, seek tới cuối QC, mute, ẩn banner/overlay, đóng popup chỉ khi phát hiện quảng cáo thực sự
 
 Hỗ trợ thêm:
 
 - YouTube thường, **Shorts**, **YouTube Music**, **m.youtube.com**
 - Chống popup **anti-adblock** và hộp thoại "Video đã tạm dừng"
-- Bật/tắt từng loại: video, banner, overlay, anti-adblock, mute ads, fast skip
+- **Chặn quảng cáo mua sắm** — ẩn thẻ sản phẩm có giá (ví dụ "… 125.000₫ · Cửa hàng trình liên kết Shopee"), bảng "Sản phẩm" bên cạnh video, kệ merch và sticker sản phẩm trên Shorts
+- Bật/tắt từng loại: video, banner, overlay, anti-adblock, **mua sắm**, mute ads, fast skip, **bỏ qua hẳn** (gỡ QC ở tầng mạng)
 - **Whitelist kênh** (UC ID hoặc `@handle`) — không chặn trên kênh chỉ định
+
+### Hiệu năng (v2.4.15)
+
+- **Không rò rỉ bộ nhớ khi xem lâu:** mọi `MutationObserver` gắn vào player của YouTube đều được `disconnect()` khi player bị gỡ khỏi DOM → không giữ lại cây DOM cũ sau nhiều lần điều hướng trong cùng một phiên
+- **Vòng quét thích ứng:** quét 300ms khi tab đang xem; tự giảm còn 1.5–2s khi tab ẩn hoặc extension không hoạt động; tự tăng tốc lại ngay khi tab hiện lại
+- **Dọn dẹp tức thì:** tắt extension → xoá ngay hiệu ứng ánh sáng nền, lớp phủ QC và các nút phụ, không chờ vòng quét kế tiếp
 
 ### Tính năng kiểu YouTube Premium
 
@@ -72,10 +79,12 @@ Khi YouTube/Spotify đổi giao diện, thêm selector vào [`release/remote-con
 ## Test
 
 ```bash
-npm test
+npm test        # 223 test (Chrome headless + Node)
+npm run smoke   # quét lỗi runtime/console trên 9 trang test
+npm run build   # đóng gói + kiểm tra gói build
 ```
 
-Chạy 87 test (Chrome headless + Node). GitHub Actions tự chạy mỗi lần push.
+GitHub Actions tự chạy mỗi lần push (test + smoke + build).
 
 ## Cài đặt & Đóng gói
 
@@ -89,14 +98,14 @@ Extension tự nâng cấp khi có bản mới (qua `release/update.xml` + CRX).
 
 ### 2. Trình duyệt Android hỗ trợ Extension (Lemur, Quetta, Yandex)
 
-Chạy lệnh đóng gói bản điện thoại (`dist/funnygame-mobile-v2.4.0.zip`):
+Chạy lệnh đóng gói bản điện thoại (`dist/funnygame-mobile-v2.4.11.zip`):
 ```bash
 node scripts/build-mobile.js
 ```
 
 ### 3. Bộ nguồn Safari iOS (Xcode / Web Extension)
 
-Chạy lệnh tạo bộ nguồn Safari (`dist/funnygame-safari-source-v2.4.0.zip`):
+Chạy lệnh tạo bộ nguồn Safari (`dist/funnygame-safari-source-v2.4.11.zip`):
 ```bash
 node scripts/build-safari-source.js
 ```
@@ -113,7 +122,8 @@ node scripts/build-safari-source.js
 ```
 ├── manifest.json / background.js
 ├── license.js              # Key authentic
-├── content-main.js         # MAIN world: lọc InnerTube YouTube
+├── content-yt-net.js        # MAIN world: gỡ slot QC ở tầng mạng (bỏ qua hẳn)
+├── content-main.js         # MAIN world: nhận biết QC + skip/tua/mute
 ├── content.js / content.css
 ├── content-spotify-main.js # MAIN world: hook Spotify player
 ├── content-spotify.js

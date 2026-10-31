@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Test lớp chặn tầng mạng</title></head>
+<body>
+<pre id="out">RUNNING</pre>
+<script>
+    const results = [];
+    function check(name, cond, extra) { results.push((cond ? "PASS " : "FAIL ") + name + (extra ? "  [" + extra + "]" : "")); }
+    window.addEventListener("error", (e) => { results.push("FAIL runtime error: " + e.message + " @" + e.lineno); document.getElementById("out").textContent = results.join("\n"); });
+
+    // ---- Mô phỏng response của YouTube API /youtubei/v1/player ----
+    const PLAYER_RESPONSE = {
+        playabilityStatus: { status: "OK" },
+        streamingData: { formats: [{ url: "https://googlevideo.com/x" }] },
+        adPlacements: [
+            { adPlacementRenderer: { config: { adPlacementConfig: { adTimeOffset: { startOffsetMillis: 30000 } } } } },
+            { adPlacementRenderer: { config: { adPlacementConfig: { adTimeOffset: { startOffsetMillis: 90000 } } } } },
+        ],
+        playerAds: [{ playerLegacyDesktopWatchAds: { adRenderer: { adId: "abc" } } }],
+        adSlots: [{ adSlotRenderer: { adSlotMetadata: {} } }],
+    };
+
+    window.__FG_TEST__ = {};
+</script>
+<script src="/content-yt-net.js"></script>
+<script>
+    (async () => {
+        try {
+            const N = window.__FG_TEST__.net;
+            check("N1 lớp mạng đã nạp", !!N && !!window.__fgNet);
+
+            // 1. Gỡ slot QC khỏi playerResponse
+            const clone = JSON.parse(JSON.stringify(PLAYER_RESPONSE));
+            const changed = N.sanitizeObject(clone, 0);
+            check("N2 sanitizeObject gỡ được adPlacements", changed === true && clone.adPlacements.length === 0,
+                `changed=${changed} len=${clone.adPlacements.length}`);
+            check("N3 sanitizeObject gỡ được playerAds", Array.isArray(clone.playerAds) && clone.playerAds.length === 0);
+            check("N4 sanitizeObject gỡ được adSlots", Array.isArray(clone.adSlots) && clone.adSlots.length === 0);
+            check("N5 KHÔNG đụng video chính (streamingData giữ nguyên)",
+                !!clone.streamingData && clone.streamingData.formats.length === 1);
+            check("N6 KHÔNG đụng playabilityStatus", clone.playabilityStatus.status === "OK");
+
+            // 2. Gỡ trong playerResponse lồng trong response
+            const nested = { response: { playerResponse: { adPlacements: [1, 2], streamingData: { formats: [1] } } } };
+            N.sanitizeObject(nested, 0);
+            check("N7 gỡ được QC trong response.playerResponse lồng",
+                nested.response.playerResponse.adPlacements.length === 0 &&
+                nested.response.playerResponse.streamingData.formats.length === 1);
+
+            // 3. Xử lý chuỗi JSON
+            const text = JSON.stringify(PLAYER_RESPONSE);
+            const clean = N.sanitizeText(text);
+            const parsed = JSON.parse(clean);
+            check("N8 sanitizeText gỡ QC khỏi chuỗi JSON",
+                parsed.adPlacements.length === 0 && parsed.playerAds.length === 0 && parsed.adSlots.length === 0);
+            check("N9 sanitizeText giữ nguyên phần video chính",
+                parsed.streamingData.formats.length === 1 && parsed.playabilityStatus.status === "OK");
+
+            // 4. Chuỗi không có QC → giữ nguyên byte-for-byte
+            const noAd = JSON.stringify({ streamingData: { formats: [{ url: "u" }] } });
+            check("N10 chuỗi không có QC giữ nguyên", N.sanitizeText(noAd) === noAd);
+            check("N11 chuỗi rỗng / không phải JSON an toàn",
+                N.sanitizeText("") === "" && N.sanitizeText("abc") === "abc");
+
+            // 5. Nhận diện đúng endpoint player
+            check("N12 nhận diện /youtubei/v1/player", N.isPlayerApi("https://www.youtube.com/youtubei/v1/player?key=abc") === true);
+            check("N13 KHÔNG nhận nhầm endpoint khác",
+                N.isPlayerApi("https://www.youtube.com/youtubei/v1/next") === false &&
+                N.isPlayerApi("https://www.youtube.com/youtubei/v1/browse") === false &&
+                N.isPlayerApi("https://googlevideo.com/videoplayback") === false);
+
+            // 6. Chặn theo license / whitelist / cài đặt
+            check("N14 mặc định CHƯA được gỡ (chưa có license)", N.shouldStrip() === false);
+
+            window.postMessage({
+                type: "FG_NET_CONFIG", ok: true, enabled: true, whitelisted: false,
+                whitelistChannels: [], settings: { blockManifest: true },
+            }, "*");
+            await new Promise(r => setTimeout(r, 60));
+            check("N15 có license + không whitelist → được gỡ QC", N.shouldStrip() === true);
+
+            window.postMessage({
+                type: "FG_NET_CONFIG", ok: true, enabled: true, whitelisted: true,
+                whitelistChannels: [], settings: { blockManifest: true },
+            }, "*");
+            await new Promise(r => setTimeout(r, 60));
+            check("N16 kênh whitelist → KHÔNG gỡ QC", N.shouldStrip() === false);
+
+            window.postMessage({
+                type: "FG_NET_CONFIG", ok: true, enabled: true, whitelisted: false,
+                whitelistChannels: [], settings: { blockManifest: false },
+            }, "*");
+            await new Promise(r => setTimeout(r, 60));
+            check("N17 tắt cài đặt 'Bỏ qua hẳn' → KHÔNG gỡ QC", N.shouldStrip() === false);
+
+            window.postMessage({
+                type: "FG_NET_CONFIG", ok: false, enabled: false, whitelisted: false,
+                whitelistChannels: [], settings: { blockManifest: true },
+            }, "*");
+            await new Promise(r => setTimeout(r, 60));
+            check("N18 chưa kích hoạt → KHÔNG gỡ QC", N.shouldStrip() === false);
+
+            // 7. Cầu chì (trip) — sau khi gỡ QC gây lỗi phát video
+            window.postMessage({
+                type: "FG_NET_CONFIG", ok: true, enabled: true, whitelisted: false,
+                whitelistChannels: [], settings: { blockManifest: true },
+            }, "*");
+            await new Promise(r => setTimeout(r, 60));
+            check("N19 bật lại → được gỡ QC", N.shouldStrip() === true);
+            window.__fgNet.trip();
+            check("N20 trip() → tự ngắt lớp chặn mạng", window.__fgNet.forced === true && N.shouldStrip() === false);
+
+            // 8. Bộ đếm số phản hồi đã gỡ (chỉ đếm khi xử lý chuỗi JSON thật)
+            const before = window.__fgNet.stripped;
+            N.sanitizeText(JSON.stringify(PLAYER_RESPONSE));
+            check("N21 bộ đếm stripped tăng sau khi gỡ 1 phản hồi",
+                window.__fgNet.stripped === before + 1,
+                `before=${before} after=${window.__fgNet.stripped}`);
+
+            // 9. Đường tắt nhanh: localStorage snapshot cho phép lớp mạng biết ngay
+            //    trạng thái kích hoạt mà không phải chờ tin nhắn cấu hình.
+            const hasSnapshot = (() => {
+                try {
+                    const raw = localStorage.getItem("__fg_state_v1");
+                    if (!raw) return false;
+                    const st = JSON.parse(raw);
+                    return st && st.lic === 1 && Array.isArray(st.wl);
+                } catch { return false; }
+            })();
+            check("N22 snapshot localStorage có cấu trúc đúng (lic + wl)",
+                hasSnapshot === true || localStorage.getItem("__fg_state_v1") === null,
+                localStorage.getItem("__fg_state_v1") || "null");
+
+            // 10. Lớp mạng KHÔNG được gỡ QC từ ytInitialPlayerResponse khi chưa kích hoạt.
+            //     Đặt response có QC lên global → kiểm tra nó KHÔNG bị đụng.
+            window.postMessage({
+                type: "FG_NET_CONFIG", ok: false, enabled: false, whitelisted: false,
+                whitelistChannels: [], settings: { blockManifest: true },
+            }, "*");
+            await new Promise(r => setTimeout(r, 60));
+            const probe = JSON.parse(JSON.stringify(PLAYER_RESPONSE));
+            window.ytInitialPlayerResponse = probe;
+            await new Promise(r => setTimeout(r, 350));
+            check("N23 chưa kích hoạt -> KHÔNG gỡ QC từ ytInitialPlayerResponse",
+                Array.isArray(window.ytInitialPlayerResponse.adPlacements) &&
+                window.ytInitialPlayerResponse.adPlacements.length === 2,
+                `len=${window.ytInitialPlayerResponse.adPlacements.length}`);
+
+            // 11. Kích hoạt → phải gỡ được QC từ global
+            // (trip() ở N20 là "cầu chì" vĩnh viễn → phải gỡ lại để test phía sau chạy được)
+            window.__fgNet.forced = false;
+            window.postMessage({
+                type: "FG_NET_CONFIG", ok: true, enabled: true, whitelisted: false,
+                whitelistChannels: [], settings: { blockManifest: true },
+            }, "*");
+            await new Promise(r => setTimeout(r, 400));
+            check("N24 đã kích hoạt -> gỡ QC từ ytInitialPlayerResponse",
+                Array.isArray(window.ytInitialPlayerResponse.adPlacements) &&
+                window.ytInitialPlayerResponse.adPlacements.length === 0,
+                `len=${window.ytInitialPlayerResponse.adPlacements.length}`);
+            check("N25 gỡ QC KHÔNG làm mất video chính",
+                !!window.ytInitialPlayerResponse.streamingData &&
+                window.ytInitialPlayerResponse.streamingData.formats.length === 1);
+
+            document.getElementById("out").textContent = results.join("\n");
+        } catch (e) {
+            results.push("FAIL exception: " + (e && e.stack || e));
+            document.getElementById("out").textContent = results.join("\n");
+        }
+    })();
+</script>
+</body></html>

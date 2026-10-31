@@ -1,5 +1,209 @@
 # Changelog
 
+## [2.4.15] — 2026-10-31
+
+### Sửa — Rò rỉ bộ nhớ + giảm tải CPU (vòng quét thích ứng)
+Bản 2.4.14 chạy ổn nhưng audit sâu phát hiện **3 vấn đề thật** về bộ nhớ/CPU khi xem YouTube lâu (vài giờ) hoặc mở nhiều tab.
+
+- **Rò rỉ bộ nhớ — `MutationObserver` không bao giờ được ngắt (`content-main.js`):**
+  Mỗi player YouTube được gắn 1 `MutationObserver` theo dõi class. Closure của observer giữ tham chiếu **mạnh** tới player (và toàn bộ cây con của nó). Nhưng code cũ chỉ là `knownPlayers.delete(p)` — **không gọi `disconnect()`** → mỗi lần YouTube thay player (SPA điều hướng) giữ lại player cũ vĩnh viễn.
+  → Thêm `releasePlayer()`: `disconnect()` observer + `unobserve()` vùng UI QC + xoá khỏi `knownPlayers` / `playerObservers` / `adUiZones`. Được gọi tự động khi phát hiện player đã bị gỡ khỏi DOM.
+
+- **Giảm tải CPU — vòng quét thích ứng (`content-main.js` + `content.js`):**
+  Vòng quét chính chạy cứng **300ms** và quét banner mỗi **450ms**, kể cả khi:
+  - tab đang ẩn (người dùng xem video ở tab khác) → đốt CPU vô ích
+  - extension đã tắt / kênh bị whitelist
+  → **Tab ẩn hoặc extension không hoạt động → nhịp quét giảm còn 1500ms (`content-main.js`) / 2000ms (`content.js`)**, tự quay lại nhịp nhanh ngay khi tab hiện lại (qua `visibilitychange`) hoặc khi bật/tắt extension (`applyConfig` → `refreshLoopRate()`).
+
+- **Dọn hiệu ứng ngay khi tắt bảo vệ (`content-main.js`):**
+  Vì vòng quét có thể chậm tới 1.5s, khi tắt extension hiệu ứng ánh sáng nền (ambient), class `fg-ad-active`, nút PiP và nút tua đều bị giữ lại thêm tới 1.5s. → Gọi `teardownAmbient()` / `setAdActive(false)` / `stopFastAdLoop()` / `ensurePipButton()` / `ensureJumpButton()` **ngay lập tức** trong handler `FG_LICENSE`.
+
+- **An toàn license — TTL cho ảnh chụp trạng thái (`content-yt-net.js`):**
+  Ảnh chụp `localStorage["__fg_state_v1"]` (cờ kích hoạt + whitelist) tồn tại vô thời hạn. Nếu người dùng gỡ extension (hoặc license hết hạn) mà trang vẫn còn snapshot `lic:1` → lớp chặn tầng mạng vẫn tưởng được phép gỡ quảng cáo.
+  → Thêm **TTL 6 giờ**: snapshot cũ hơn 6 giờ bị coi là không hợp lệ **và bị xoá khỏi `localStorage`**.
+
+### Sửa — Bộ test build báo FAIL giả do gói cũ sót lại
+- **`tests/package.test.js`**: trước đây quét **mọi** file `.zip` trong `dist/`, nên gói build của phiên bản cũ còn sót lại (vd `v2.4.13` khi đã lên `v2.4.14`) báo FAIL vì manifest không khớp phiên bản hiện tại. → Chỉ kiểm tra gói đúng phiên bản hiện tại, thêm assertion `B1b` báo rõ gói nào cần xoá.
+- **`scripts/build.js`**: tự **xoá gói build cũ** khỏi `dist/` mỗi lần build → `dist/` luôn chỉ có gói của phiên bản hiện tại.
+- **`tests/package.test.js`**: thêm `content-yt-net.js` vào danh sách file bắt buộc trong gói (trước đó thiếu → file lớp mạng có thể bị rơi khi đóng gói).
+
+### Sửa — CI bỏ sót file mới
+- **`.github/workflows/test.yml`**: thêm `content-yt-net.js` vào bước kiểm tra cú pháp (file mới chưa từng được kiểm tra trong CI).
+
+### Kiểm thử
+- Trang test mới `tests/netfast.html` (5 assertion): snapshot quá hạn → không được gỡ QC, snapshot cũ bị xoá, cấu hình hợp lệ vẫn hoạt động
+- `tests/main.html` thêm 4 assertion (53–53d): hook theo dõi player tồn tại, player giả được theo dõi, **player bị gỡ khỏi DOM → observer được giải phóng hoàn toàn**
+- Bộ test: **322 PASS / 0 FAIL** + smoke test sạch console (13 trang)
+
+### Ghi chú quyền riêng tư
+- Không thay đổi phạm vi dữ liệu. Ảnh chụp `localStorage["__fg_state_v1"]` nay tự xoá sau 6 giờ.
+
+## [2.4.14] — 2026-10-31
+
+### Mới — "Bỏ qua hẳn": gỡ quảng cáo ngay trong dữ liệu YouTube (0 giây)
+Người dùng hỏi: *"có cách nào để bỏ qua hẳn luôn không"* — tức là **không phát quảng cáo**, không đen màn hình, không phải đợi.
+
+**Vấn đề của cách cũ (chỉ dựa vào DOM):** YouTube 2025+ không còn gắn `ad-showing` khi phát QC (chỉ có `ad-created` + `ytp-branding-shown`), nên nhận biết bằng DOM không ổn định. Tệ hơn: **QC chèn phía server (SSAI) nằm chung luồng video chính** → tua tới cuối sẽ tua mất luôn video thật. Và QC đã tải về = tốn băng thông + người dùng vẫn thấy khung hình QC.
+
+**Cách mới — can thiệp ở tầng mạng (MAIN world, `document_start`):** file mới `content-yt-net.js` chạy **trước** mã của YouTube, chặn phản hồi API `/youtubei/v1/player` và **xoá `adPlacements` / `playerAds` / `adSlots`** khỏi `playerResponse`.
+
+> YouTube không bao giờ nhận được danh sách quảng cáo → không tạo slot QC → **không tải video QC, không hiện UI QC, không đen màn hình**. Người dùng xem thẳng nội dung.
+
+- **`content-yt-net.js` (file mới):**
+  - Hook `window.fetch` — đọc lại body của phản hồi player, gỡ slot QC, trả về `Response` mới (giữ nguyên `status`/`headers`/`url`)
+  - Hook `XMLHttpRequest.prototype.responseText` / `.response` — cho các luồng cũ còn dùng XHR
+  - Dò `ytInitialPlayerResponse`, `ytcfg` (`set`/`set_`/`data_`) và `ytplayer.config.args.player_response` — gỡ QC trước khi player đọc
+  - Chỉ can thiệp khi: **đã kích hoạt + không whitelist + cài đặt "Bỏ qua hẳn" đang bật**
+  - **Cầu chì an toàn:** nếu gỡ slot QC làm YouTube lỗi phát video → tự ngắt lớp chặn mạng (`trip()`) và tải lại video bình thường
+- **`content-main.js` — bỏ qua tức thì qua API player:**
+  - `enterAd()` gọi `player.skipAd()` sau 120ms → YouTube chuyển thẳng sang video chính, **không cần đợi nút "Bỏ qua" xuất hiện**
+  - Thay cờ "gọi 1 lần" bằng bộ giới hạn tần suất (`SKIP_API_GAP` 700ms / `SKIP_API_MAX` 4 lần) — giữ được lợi ích "gọi sớm" mà vẫn không spam (tránh treo trình duyệt như bản 2.4.12)
+- **Cài đặt mới `blockManifest`** ("Bỏ qua hẳn quảng cáo") trong popup — bật mặc định, tắt được nếu video nào lỗi
+- **`content.js`** gửi thêm message `FG_NET_CONFIG` (license + whitelist + cài đặt) cho lớp mạng; lưu whitelist vào `sessionStorage` để lần tải trang sau khỏi phải chờ
+- **`content-main.js` — `collectDiagnostics()`** bổ sung nhóm `net` (số phản hồi đã gỡ QC, trạng thái cầu chì)
+
+### Kiểm thử
+- Trang test mới `tests/net.html` (25 assertion): gỡ `adPlacements`/`playerAds`/`adSlots`, giữ nguyên `streamingData`/`playabilityStatus`, xử lý playerResponse lồng, nhận diện đúng endpoint, tôn trọng license/whitelist/cài đặt, cầu chì `trip()`, gỡ QC từ `ytInitialPlayerResponse`
+- `tests/main.html` thêm 5 assertion (50–52): `skipAd()` được gọi khi vào QC, có giới hạn tần suất, diagnostics có nhóm `net`
+- Bộ test: **313 PASS / 0 FAIL** + smoke test sạch console (13 trang)
+
+### Ghi chú quyền riêng tư
+- Lớp chặn tầng mạng lưu 1 ảnh chụp trạng thái nhỏ trong `localStorage` (`__fg_state_v1`): cờ kích hoạt + danh sách whitelist + cờ cài đặt. Dùng để lớp mạng biết ngay từ khi khởi động mà không phải chờ tin nhắn cấu hình. **Không chứa dữ liệu nhạy cảm**, không gửi ra ngoài.
+
+## [2.4.13] — 2026-10-31
+
+### Sửa — QC vẫn hiện (nguyên nhân gốc tìm được từ báo cáo lỗi thật)
+Người dùng gửi báo cáo chẩn đoán từ trang YouTube thật (video `j8U06veqxdU`) cho thấy QC vẫn hiện. Dữ liệu chỉ ra **nguyên nhân gốc**:
+
+```
+playerClass: "... ytp-transparent ... ad-created ytp-branding-shown
+               playing-mode buffering-mode unstarted-mode"
+adShowing: false      confirmedAd: false
+ytAdState: -1         ytPlayerState: -1
+```
+
+**YouTube KHÔNG LUÔN gắn `ad-showing`/`ad-interrupting` khi đang phát QC.** Trong trường hợp này player chỉ có:
+- `ad-created` — YouTube đã tạo player QC
+- `ytp-branding-shown` — nhãn "Quảng cáo" đang hiện
+- `ytp-transparent` — player trong suốt (kiểu overlay QC mới)
+
+Hệ quả trước đây: `hasAdClass()` = `false` → `isConfirmedAd()` = `false` → extension **không hề xử lý QC** → `exitAd()` reset `video.style.opacity = ""` → **QC hiện ra cho người dùng**.
+
+- **`content-main.js` — nhận biết QC mới (3 đường):**
+    1. `ad-created` + **UI QC hiển thị thật** (nút "Bỏ qua" / badge QC trong `.video-ads` / khung `skip-button-slot` / interstitial / `overlay-container`)
+    2. `ad-created` + `ytp-branding-shown` + overlay QC trong `.video-ads`
+    3. Đường cũ (`ad-showing`/`ad-interrupting` + UI QC) và QC bumper (overlay + badge) — giữ nguyên
+- **`content-main.js` — hàm `hasVisibleAdUi()`:** tập trung tín hiệu UI QC, **loại bỏ** các tín hiệu dễ gây nhận nhầm (overlay trần không badge, badge nằm ngoài `.video-ads`, `.ytp-ad-progress-list` — luôn có trong thanh tiến trình kể cả video chính)
+- **`content.css` — thêm `.ad-created` vào nhóm ẩn overlay QC:** trước đó không có class nào được ẩn nên QC hiện ra dù extension có xử lý
+- **`content-main.js` — `MutationObserver` theo dõi vùng UI QC:** phát hiện nút "Bỏ qua" **xuất hiện** → bấm ngay lập tức, không phải chờ lượt quét 300ms
+- **`content-main.js` — `exitAd()` reset `skipClickedAt`/`skipApiCalled`:** trước đó mốc "đã bấm nút Bỏ qua" không được reset → `fallbackActive` bị bật sai ở QC kế tiếp (tua thẳng về cuối ngay lập tức)
+- **`content-main.js` — chờ khôi phục 700ms chỉ khi còn dấu hiệu QC:** nếu mất hết dấu hiệu → khôi phục ngay, tránh video chính bị kẹt 16x
+- **`collectDiagnostics()`** bổ sung `adClass` / `adCreated` / `adBranding` / `visibleAdUi` để chẩn đoán chính xác hơn
+
+### Sửa — Test bị "rò rỉ trạng thái" làm hỏng 29 test
+`tests/main.html` test 38 tạo interstitial chứa nút "Bỏ qua" nhưng **quên xóa** → nút vẫn còn trong DOM → mọi test phía sau bị coi là đang có QC → kẹt 16x. Đã sửa và bổ sung comment giải thích.
+
+### Kiểm thử
+- Thêm 9 assertion hồi quy trong `tests/main.html` (45–49): QC kiểu mới chỉ có `ad-created`, `ad-created` không có UI QC (phải **không** tua nhầm video chính), QC có nút "Bỏ qua" kiểu mới, nút "Bỏ qua" xuất hiện muộn, `ad-created` + branding + overlay không badge
+- Bộ test: **283 PASS / 0 FAIL** + smoke test sạch console
+
+## [2.4.12] — 2026-10-31
+
+### Sửa — QC bị "chậm" / phải đợi tới hết thời lượng mới tự mất
+Báo cáo từ người dùng: *"khi hiện quảng cáo nó có tự động bỏ qua liền không… tôi thấy khi hiện quảng cáo tua nhanh có bỏ qua có nhưng bị chậm và đôi lúc không hiện nút bỏ qua để bấm, phải đợi tua nhanh tới hết time mới tự mất quảng cáo"*.
+
+Rà soát lại toàn bộ chuỗi xử lý QC và tìm ra **4 nguyên nhân** khiến việc bỏ quảng cáo chậm:
+
+- **`content-main.js` — thời gian chờ giữa 2 lần bấm nút "Bỏ qua" quá dài (3s):** nếu lần bấm đầu không ăn (YouTube mới render nút, handler chưa sẵn sàng), phải chờ **3 giây** mới thử lại → cảm giác "chậm". Đổi `SKIP_RETRY_MS` 3000 → **1200ms**, nâng trần `SKIP_MAX_PER_BTN` 6 → 8
+- **`content-main.js` — QC dài (>20s) CÓ nút "Bỏ qua" bị cố tình giữ tốc độ 1x:** logic cũ (`holdFastSkip`) chủ động **không tua** khi thấy nút "Bỏ qua", vì sợ tua trước khi nút ăn sẽ làm YouTube hủy QC rồi hiện QC kế tiếp. Hệ quả: nếu click không ăn, người dùng phải đứng yên nhìn QC chạy tới hết. Nay **luôn tua 16x** (tua 16x không làm mất nút "Bỏ qua") + chỉ giới hạn việc *seek*
+- **`content-main.js` — seek tới cuối bị điều kiện buffer chặn:** `isBufferedAt()` yêu cầu QC phải buffer sẵn tới cuối mới cho seek. Với mạng yếu / QC dài, điều kiện này không bao giờ đúng → **không seek được → chỉ còn chạy 16x tới hết QC** (đúng triệu chứng người dùng mô tả). Nay seek tới cuối **không cần buffer** (Chrome tự tải phần còn lại, vài KB)
+- **`content-main.js` — thiếu phương án dự phòng khi bấm nút không ăn:** thêm `SKIP_FALLBACK_MS` (1.2s) — sau khi đã bấm nút "Bỏ qua" mà QC vẫn còn, tự chuyển sang chế độ dự phòng seek thẳng tới cuối QC
+
+### Sửa — Tìm nút "Bỏ qua" bỏ sót nhiều trường hợp
+- Thêm **Pass 3**: quét **mọi vùng QC** (`.ytp-ad-player-overlay`, `.ytp-ad-overlay-container`, `.ytp-ad-skip-button-slot`, `.ytp-ad-action-interstitial`, `.ytp-video-interstitial-buttoned-centered-layout`, …) tìm nút theo **chữ** "Bỏ qua / Skip" → bắt được nút YouTube đặt **ngoài `.video-ads`** hoặc khi YouTube đổi tên class
+- Bổ sung selector cho nút dạng `<div>` / class lạ: `.ytp-ad-skip-button-modern`, `[class*='skip-ad-button']`, `[id^='skip-button']`
+- Gom hàm `collectSkipButtons()` dùng chung cho cả "bấm" và "kiểm tra có nút" → trước đây 2 hàm có thể thấy 2 nút khác nhau, gây mâu thuẫn
+- `player.skipAd()` giờ chỉ gọi **1 lần cho mỗi QC** (trước gọi mỗi lần bấm → player re-init liên tục, có thể làm treo trình duyệt)
+
+### Mới — Nhận biết QC qua API nội bộ YouTube
+- Dùng `player.getAdState()` (1 = đang phát QC, 2 = đã xong) và `player.getPlayerState()` thay vì chỉ tin class DOM → xác nhận QC chính xác hơn khi UI QC render chậm
+- `collectDiagnostics()` bổ sung nhóm `ad` + `skipStats` + `handleStats` → phục vụ chẩn đoán bằng `FG_DIAG_REQ`
+
+### Kiểm thử
+- Thêm `tests/watch_yt.js` — công cụ **theo dõi trực tiếp** hành vi bỏ QC trên trang YouTube thật (Chrome headless + DevTools Protocol), in timeline QC xuất hiện → bấm nút → QC kết thúc
+- Bổ sung 6 assertion hồi quy vào `tests/main.html`: nút skip bấm không ăn → phải tự tua tới cuối (không đứng yên), nút skip ăn ngay → QC kết thúc, nút skip class lạ → vẫn bấm được, nút skip ngoài `.video-ads` → vẫn bấm được, QC không có nút + không buffer → vẫn seek tới cuối
+- Bộ test: **273 PASS / 0 FAIL**
+
+## [2.4.11] — 2026-10-31
+
+### Mới — Chặn quảng cáo MUA SẮM (shopping ads)
+Bổ sung chặn dạng quảng cáo hiển thị **thẻ sản phẩm có giá** (ví dụ "Thẻm tập Yoga cao cấp TP… 125.000₫ · Cửa hàng trình liên kết Shopee"). Đây là dạng quảng cáo của YouTube Shopping / kênh bán hàng liên kết, **không** thuộc nhóm banner quảng cáo chuẩn nên trước đây không bị chặn.
+
+- **`content.css`:** ẩn (theo class `html.fg-no-shopping`) bảng "Sản phẩm" bên cạnh video, dải sản phẩm dưới video, kệ merch, sticker sản phẩm dán đè trên Shorts, nút "Mua sắm"/"Sản phẩm nổi bật" và các panel `shopping_panel*`
+- **`content.js`:** thêm lớp bảo vệ thứ hai bằng JS (`hideShoppingAds()`) — bắt được phần tử render muộn (YouTube chèn sau khi CSS áp dụng) và **đếm vào thống kê** ở mục mới "Mua sắm"
+- **Hoàn tác đúng:** thêm `restoreShoppingAds()` gỡ inline style khi người dùng tắt setting hoặc tắt bảo vệ — trước đó các node đã ẩn sẽ **ẩn vĩnh viễn** không thể hiện lại
+- **Cấu hình từ xa:** `release/remote-config.json` có thêm danh sách `yt.shopping` (version 3 → 4) để sửa selector khi YouTube đổi tên class mà không cần phát hành bản mới
+- **DNR:** thêm 3 rule chặn request tracking của shopping ads (`/api/stats/shopping`, `/pagead/shopping`, `/ptracking/shopping`)
+- **Giao diện:** thêm công tắc "Quảng cáo mua sắm" trong popup + mục "Mua sắm" trong bảng thống kê (popup & stats)
+
+### Kiểm thử
+- Thêm `tests/shopping.html` — 13 assertion: class `fg-no-shopping` bật/tắt đúng, mọi thành phần shopping bị ẩn, **không** ẩn nhầm tiêu đề video/bình luận, phần tử render muộn vẫn bị ẩn, đếm vào thống kê, và bật/tắt setting hoàn tác đúng
+- Bộ test: **261 PASS / 0 FAIL**
+
+## [2.4.10] — 2026-10-31
+
+### Sửa — Lỗi "vacuous test" + race condition ghi thống kê
+Vòng rà soát tự động lần 2 (syntax, JSON, DNR rules, remote-config, đóng gói, smoke test console) phát hiện thêm:
+
+- **`content.js` vẫn đặt `display:none` cho `.ytp-ad-overlay-container`:** `hideOverlayAds()` gọi nhầm `hideElements()` thay vì `hideElementsSoft()` → nút "Bỏ qua" mất kích thước (`offsetWidth = 0`) → **auto-skip không bấm được nút**. Sửa lại dùng `hideElementsSoft()` (chỉ `opacity: 0`, giữ nguyên kích thước nút con)
+- **Race condition ghi `chrome.storage.local`:** `flushStats()` và `detectAndStoreUser()` cùng đọc→sửa→ghi `userStats` song song → mỗi bên giữ một bản sao cũ, bản ghi sau **đè mất** phần của bản ghi trước (mất số quảng cáo đã chặn). Thêm hàng đợi `enqueueStorageWrite()` để serialize mọi lần ghi
+- **`tests/css.html` là test "vacuous":** nạp `license.js` thật (token giả → `verifyStored` fail) khiến `isEnabled = false` → `hideOverlayAds()` **không bao giờ chạy** → test luôn PASS dù code sai. Nay mock license đúng cách, mock `chrome.storage` hỗ trợ cả callback lẫn Promise API
+- **`release/update.xml` còn version `2.4.8`** (stale) → đồng bộ `2.4.10`
+- **`package.json` version `2.4.0`** (stale) → đồng bộ `2.4.10`
+- **`one.js` nằm sai chỗ ở thư mục gốc** → chuyển vào `tests/`
+- **`popup.js` / `stats.js` cũng dính race condition ghi `userStats`** (`touchCurrentUser()` vs `confirmResetBtn`, `patchCurrentUser()` vs `confirmResetBtn`) → áp dụng cùng cơ chế `enqueueStorageWrite()`
+
+### Kiểm thử
+- Thêm `tests/smoke.js` — chạy 12 trang test bằng Chrome headless, thu console error và phát hiện trang không chạy xong
+- Thêm `tests/storage.test.js` — chứng minh race condition là thật (khi không serialize thì mất dữ liệu) và fix hoạt động
+- Thêm `tests/package.test.js` — kiểm tra 3 gói build: đủ file bắt buộc, không lộ khóa riêng, manifest hợp lệ, dữ liệu demo chỉ ở chế độ `?preview`
+- Đăng ký `npm run smoke` + `npm run build` + `tests/package.test.js` vào CI (`.github/workflows/test.yml`)
+- Thêm `tests/mkpopup.js` + `tests/mkpages.js` — sinh tự động trang test cho `popup.html` / `stats.html` / `options.html` từ HTML gốc (mock `chrome.*` + script kiểm tra), bảo đảm test luôn khớp với giao diện thật và không bị "vacuous"
+- Thêm `tests/one.js` — chạy riêng 1 trang test và in lỗi console (debug nhanh)
+- Bộ test: **248 PASS / 0 FAIL** + 12/12 trang smoke sạch console + 19/19 kiểm tra gói build
+
+
+## [2.4.9] — 2026-10-31
+
+### Sửa — Đồng bộ hoàn toàn với bộ test + loại bỏ lỗi "treo"/"QC hiện liên tục"
+Rà soát toàn bộ dự án và chạy lại bộ test (`npm test`) đã phát hiện và sửa các lỗi sau:
+
+- **`content.css` ẩn `.ytp-ad-overlay-container` bằng `display: none`:** nút "Bỏ qua" của YouTube nằm BÊN TRONG khung này → `display:none` làm nút mất kích thước (`offsetWidth = 0`) nên bộ auto-skip **không bao giờ bấm được nút "Bỏ qua"** trong bản thật. Đổi sang `opacity: 0` (giữ nguyên kích thước) và thêm lớp `html.fg-ad-active` để ẩn phủ QC còn sót
+- **`content.js` cũng đặt `display:none` cho `.ytp-ad-overlay-container`:** tách thành `hideElementsSoft()` (dùng `opacity`) để không phá vỡ nút "Bỏ qua"; các lớp phủ thuần hình ảnh (`.ytp-ad-text-overlay`, `.ytp-ad-image-overlay`) vẫn ẩn hoàn toàn
+- **`fireClick()` bắn click 2 lần** (`el.click()` + `dispatchEvent`) → mỗi lượt bấm kích hoạt handler 2–4 lần do event nổi lên nút cha → spam click, treo trình duyệt. Bỏ `el.click()`, giữ lại 1 sự kiện `click`
+- **Chống spam nút "Bỏ qua":** mỗi nút chỉ bấm lại sau 3s và tối đa 6 lần/nút (thay vì cooldown 150ms không giới hạn)
+- **QC bumper (YouTube 2025+)** không gắn class `ad-showing` (chỉ có overlay + badge) → trước đây không hề bị nhận diện. Bổ sung `hasBumperAd()`; vòng quét nhanh 35ms cũng giữ chạy cho loại QC này
+- **Thiếu class `fg-ad-active` trên `<html>`** (được CSS dùng để ẩn phủ QC) → bổ sung `setAdActive()` bật/tắt theo vòng đời QC
+- **Thiếu nav guard:** bấm nút "Bỏ qua" nằm trong thẻ `<a>` có thể nhảy trình duyệt sang trang quảng cáo. Bổ sung Navigation API `navigate` + chặn click `<a>` ra ngoài trong capture phase, chỉ kích hoạt đúng khoảnh khắc bấm nút
+- **QC dài (>20s) bị tua 16x ngay khi còn nút "Bỏ qua":** tua trước khi nút "ăn" click khiến YouTube hủy QC rồi hiện QC kế tiếp → QC hiện liên tục. Nay: QC ngắn ≤20s vẫn tua 16x; QC dài chỉ bấm nút, và chỉ tua sau thời gian chờ 1,5s nếu nút chưa xuất hiện
+- **YouTube reset QC về đầu sau khi đã tua:** `st.seekedEnd` còn giữ `true` nên không tua lại. Nay phát hiện `currentTime` quay về gần đầu và tua lại tới cuối (có giới hạn 700ms để tránh vòng lặp)
+- **`rules/dnr_rules.json` chưa có rule nào cho YouTube** (chỉ có Spotify) → bổ sung 9 rule chặn tài nguyên quảng cáo Google (doubleclick, googlesyndication, googleadservices, pagead, ptracking…) — **không** chặn `media`/`googlevideo` nên không ảnh hưởng tải video
+- **`release/remote-config.json` có `adSignals`/`skipButtons` rỗng** → điền selector dự phòng cho giao diện QC mới, tăng `version` 2 → 3
+
+### Sửa — Spotify
+- **Nhận nhầm bài hát thật là quảng cáo:** `mediaSessionLooksLikeAd()` và `isAdPlaying()` dùng `includes("advertisement")` trên tiêu đề/nghệ sĩ → bài hát tên "Advertisement" bị tua/mute nhầm. Nay so khớp **chính xác** từng trường
+- **Mất tốc độ phát của người dùng:** sau QC luôn trả về `1x` → nay nhớ và khôi phục đúng tốc độ gốc (ví dụ 1.5x)
+
+### Bảo mật
+- **XSS trong `stats.js`:** tên hiển thị do người dùng tự đặt được chèn thẳng vào `innerHTML` → chạy được script trong trang extension (đọc được `chrome.storage` chứa token key). Nay chuyển sang `textContent`
+- **`installer/google-apps-script/Code.gs` là bản cŨ còn lỗ hổng `?action=seed`** (bất kỳ ai có link cũng tạo được key mẫu, không cần chữ ký số) → đồng bộ lại đúng bản `server/Code.gs` đã khóa
+
+### Kiểm thử
+- Thêm `tests/css.html` — test hồi quy nạp `content.css` + `content.js` thật, chống tái phát lỗi "ẩn khung chứa nút Bỏ qua"
+- Thêm `tests/rules.test.js` — kiểm tra `rules/dnr_rules.json` + `release/remote-config.json`
+- Bổ sung test cho QC bumper, `fg-ad-active`, nav guard, tua lại sau khi QC bị reset, tua 16x QC không có nút skip
+- Bộ test: **217 PASS / 0 FAIL**
+
 ## [2.4.8] — 2026-10-29
 
 ### Sửa — Quảng cáo hiện liên tục / nhảy sang trang quảng cáo

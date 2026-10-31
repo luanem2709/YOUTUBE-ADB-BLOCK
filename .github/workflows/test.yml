@@ -18,7 +18,7 @@ jobs:
 
       - name: Kiểm tra cú pháp
         run: |
-          for f in background.js license.js content-main.js content.js content-spotify.js content-spotify-main.js popup.js options.js stats.js; do
+          for f in background.js license.js content-main.js content.js content-spotify.js content-spotify-main.js content-yt-net.js popup.js options.js stats.js; do
             node --check "$f"
           done
           node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); JSON.parse(require('fs').readFileSync('rules/dnr_rules.json','utf8')); JSON.parse(require('fs').readFileSync('release/remote-config.json','utf8'))"
@@ -27,3 +27,15 @@ jobs:
         env:
           CHROME_PATH: /usr/bin/google-chrome
         run: npm test
+
+      - name: Smoke test — không lỗi runtime/console trên mọi trang
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tests/smoke.js
+
+      - name: Build & kiểm tra gói đóng gói
+        run: |
+          npm run build
+          npm run build:mobile
+          npm run build:safari
+          node tests/package.test.js

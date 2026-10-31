@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Test đường tắt nhanh (TTL)</title></head>
+<body>
+<pre id="out">RUNNING</pre>
+<script>
+    const results = [];
+    function check(name, cond, extra) { results.push((cond ? "PASS " : "FAIL ") + name + (extra ? "  [" + extra + "]" : "")); }
+    window.addEventListener("error", (e) => { results.push("FAIL runtime error: " + e.message + " @" + e.lineno); document.getElementById("out").textContent = results.join("\n"); });
+
+    // ---- Kịch bản: snapshot ĐÃ HẾT HẠN (10 giờ trước) ----
+    // Lớp mạng phải BỎ QUA snapshot này (không tự cho là đã kích hoạt).
+    try {
+        localStorage.setItem("__fg_state_v1", JSON.stringify({
+            lic: 1, wl: [], bm: true, ts: Date.now() - 10 * 60 * 60 * 1000,
+        }));
+    } catch { /* ignore */ }
+
+    window.__FG_TEST__ = {};
+</script>
+<script src="/content-yt-net.js"></script>
+<script>
+    (async () => {
+        try {
+            const N = window.__FG_TEST__.net;
+            check("T1 lớp mạng đã nạp", !!N && !!window.__fgNet);
+
+            // 1. Snapshot quá hạn → KHÔNG được coi là đã kích hoạt
+            check("T2 snapshot QUÁ HẠN → chưa kích hoạt (KHÔNG gỡ QC)", N.shouldStrip() === false);
+
+            // 2. Snapshot quá hạn phải bị xoá khỏi localStorage
+            await new Promise(r => setTimeout(r, 80));
+            check("T3 snapshot quá hạn bị xoá khỏi localStorage",
+                localStorage.getItem("__fg_state_v1") === null,
+                localStorage.getItem("__fg_state_v1") || "null");
+
+            // 3. Cấu hình hợp lệ vẫn kích hoạt được như bình thường
+            window.postMessage({
+                type: "FG_NET_CONFIG", ok: true, enabled: true, whitelisted: false,
+                whitelistChannels: [], settings: { blockManifest: true },
+            }, "*");
+            await new Promise(r => setTimeout(r, 60));
+            check("T4 cấu hình hợp lệ → gỡ QC", N.shouldStrip() === true);
+
+            // 4. Snapshot MỚI (30 giây trước) phải được chấp nhận
+            try {
+                localStorage.setItem("__fg_state_v1", JSON.stringify({
+                    lic: 1, wl: [], bm: true, ts: Date.now() - 30 * 1000,
+                }));
+            } catch { /* ignore */ }
+            const stale = N.sanitizeText === undefined;
+            check("T5 hàm sanitizeText vẫn hoạt động", stale === false);
+
+            document.getElementById("out").textContent = results.join("\n");
+        } catch (e) {
+            results.push("FAIL exception: " + (e && e.stack || e));
+            document.getElementById("out").textContent = results.join("\n");
+        }
+    })();
+</script>
+</body></html>

@@ -13,6 +13,16 @@ let userDetectTimer = null;
 const DEBOUNCE_DELAY = 80;
 const hiddenElements = new WeakSet();
 
+// Hàng đợi ghi chrome.storage.local — tránh race condition đọc→sửa→ghi trên cùng một key
+// (userStats) khi nhiều nhánh code cùng cập nhật chạy song song.
+let storageWriteChain = Promise.resolve();
+function enqueueStorageWrite(task) {
+    storageWriteChain = storageWriteChain
+        .then(() => task())
+        .catch(() => { /* lỗi storage không được làm hỏng chuỗi */ });
+    return storageWriteChain;
+}
+
 let cachedPlayer = null;
 let cachedVideo = null;
 
@@ -35,8 +45,10 @@ const DEFAULT_SETTINGS = {
     blockBanner: true,
     blockOverlay: true,
     blockAntiAdblock: true,
+    blockShopping: true,
     muteAds: true,
     fastSkip: true,
+    blockManifest: true,
     backgroundPlay: true,
     pipButton: true,
     hideUpsell: true,
@@ -53,6 +65,11 @@ function applyPageClasses() {
     const want = isEnabled && settings.hideUpsell !== false;
     if (root.classList.contains("fg-hide-upsell") !== want) {
         root.classList.toggle("fg-hide-upsell", want);
+    }
+    // Ẩn quảng cáo mua sắm (thẻ sản phẩm có giá, shopping panel, sticker sản phẩm)
+    const noShopping = isEnabled && settings.blockShopping !== false;
+    if (root.classList.contains("fg-no-shopping") !== noShopping) {
+        root.classList.toggle("fg-no-shopping", noShopping);
     }
     const logo = isEnabled && settings.customLogo !== false;
     if (root.classList.contains("fg-logo-on") !== logo) {
@@ -84,6 +101,33 @@ function syncConfigToMain() {
         whitelisted,
         remote: remoteYt,
     }, "*");
+    // Lớp chặn tầng mạng (content-yt-net.js) cần license + whitelist + cài đặt riêng.
+    // Gửi riêng 1 message vì file này không dùng token (chạy trước content-main.js).
+    // Lưu whitelist vào sessionStorage → lần tải trang sau trong cùng tab, lớp mạng
+    // biết ngay kênh nào được whitelist mà không phải chờ tin nhắn.
+    try {
+        if (whitelistChannels.length) sessionStorage.setItem("__fg_wl", JSON.stringify(whitelistChannels));
+        else sessionStorage.removeItem("__fg_wl");
+    } catch { /* ignore */ }
+    // Ảnh chụp trạng thái vào localStorage (dùng chung giữa các tab) → lớp mạng khởi động
+    // là đã biết ngay có được phép gỡ quảng cáo hay không, không bỏ lọt phản hồi
+    // player đầu tiên của YouTube. Chỉ chứa cờ bật/tắt + whitelist (không có dữ liệu nhạy cảm).
+    try {
+        localStorage.setItem("__fg_state_v1", JSON.stringify({
+            lic: isEnabled ? 1 : 0,
+            wl: whitelistChannels,
+            bm: settings.blockManifest !== false,
+            ts: Date.now(),
+        }));
+    } catch { /* ignore */ }
+    window.postMessage({
+        type: "FG_NET_CONFIG",
+        ok: isEnabled,
+        enabled: isEnabled,
+        whitelisted,
+        whitelistChannels,
+        settings,
+    }, "*");
     if (msgToken) {
         postToMain("FG_CONFIG", { settings, whitelisted, remote: remoteYt });
     }
@@ -99,15 +143,24 @@ function applyEnabled(enabledFlag, licensed) {
     } else {
         if (typeof stopObserver === "function") stopObserver();
         stopAdTick();
+        // Tắt bảo vệ → gỡ ẩn quảng cáo mua sắm (nếu không, sản phẩm vẫn bị ẩn vĩnh viễn)
+        restoreShoppingAds();
     }
 }
 
 const OVERLAY_SELECTORS = [
-    ".ytp-ad-overlay-container",
     ".ytp-ad-text-overlay",
     ".ytp-ad-image-overlay",
 ];
 const OVERLAY_SELECTOR_STR = OVERLAY_SELECTORS.join(",");
+
+// Lớp bao của overlay QC. Nút "Bỏ qua" của YouTube nằm BÊN TRONG nó, nên tuyệt đối
+// không được đặt display:none (sẽ làm nút mất kích thước → auto-skip không bấm được).
+// Chỉ ẩn bằng opacity để giữ nguyên kích thước/kích thước hiển thị của các nút bên trong.
+const SOFT_OVERLAY_SELECTORS = [
+    ".ytp-ad-overlay-container",
+];
+const SOFT_OVERLAY_SELECTOR_STR = SOFT_OVERLAY_SELECTORS.join(",");
 
 const BANNER_SELECTORS = [
     "#player-ads",
@@ -172,6 +225,7 @@ function applyRemoteConfig(cfg) {
     const yt = cfg && typeof cfg === "object" && cfg.yt && typeof cfg.yt === "object" ? cfg.yt : {};
     const banners = cleanSelectors(yt.banners);
     BANNER_SELECTOR_STR = BANNER_SELECTORS.concat(banners.filter((b) => !BANNER_SELECTORS.includes(b))).join(",");
+    applyRemoteShopping(yt.shopping);
     remoteYt = {
         adSignals: cleanSelectors(yt.adSignals),
         skipButtons: cleanSelectors(yt.skipButtons),
@@ -222,6 +276,8 @@ function initialize() {
         }
         if (changes.settings) {
             settings = { ...DEFAULT_SETTINGS, ...changes.settings.newValue };
+            // Tắt "Quảng cáo mua sắm" → gỡ inline style đã đặt, để sản phẩm hiện lại
+            if (settings.blockShopping === false) restoreShoppingAds();
             syncConfigToMain();
             if (isEnabled) handleAds(true);
         }
@@ -376,15 +432,39 @@ function syncWhitelistIfChanged() {
 }
 
 let adTick = null;
+let adTickSlow = false;
+let adTickVisHooked = false;
+
+// Tần suất quét: 450ms khi tab nhìn thấy, 2s khi tab ẩn.
+// Người dùng thường mở YouTube ở tab sau khi đang làm việc → quét nhanh liên tục
+// ở tab ẩn chỉ đốt CPU mà không có tác dụng gì.
+const AD_TICK_FAST = 450;
+const AD_TICK_SLOW = 2000;
+
+function adTickFn() {
+    if (!isEnabled) return;
+    applyPageClasses();
+    syncWhitelistIfChanged();
+    handleAds(false);
+}
 
 function startAdTick() {
     if (adTick) return;
-    adTick = setInterval(() => {
-        if (!isEnabled) return;
-        applyPageClasses();
-        syncWhitelistIfChanged();
-        handleAds(false);
-    }, 450);
+    adTickSlow = document.visibilityState === "hidden";
+    adTick = setInterval(adTickFn, adTickSlow ? AD_TICK_SLOW : AD_TICK_FAST);
+    // Đổi nhịp quét khi tab ẩn/hiện (nhanh hơn cảm nhận được vì 2s).
+    // Chỉ đăng ký 1 lần — startAdTick() có thể được gọi lại nhiều lần.
+    if (!adTickVisHooked) {
+        adTickVisHooked = true;
+        document.addEventListener("visibilitychange", () => {
+            if (!adTick) return;
+            const hidden = document.visibilityState === "hidden";
+            if (hidden === adTickSlow) return;
+            adTickSlow = hidden;
+            clearInterval(adTick);
+            adTick = setInterval(adTickFn, hidden ? AD_TICK_SLOW : AD_TICK_FAST);
+        }, { passive: true });
+    }
 }
 
 function stopAdTick() {
@@ -398,6 +478,7 @@ function stopObserver() {
 }
 
 let lastBannerScanAt = 0;
+let lastShoppingScanAt = 0;
 
 function handleAds(forceFullScan) {
     if (!isEnabled || isWhitelisted()) return;
@@ -421,6 +502,14 @@ function handleAds(forceFullScan) {
                 hideCompanionAds();
             }
         }
+        // Quảng cáo mua sắm: quét thường xuyên hơn vì YouTube render muộn (panel/sticker)
+        if (settings.blockShopping !== false) {
+            const now = Date.now();
+            if (forceFullScan || now - lastShoppingScanAt >= 600) {
+                lastShoppingScanAt = now;
+                hideShoppingAds();
+            }
+        }
     } catch (error) {
         console.debug("[FUNNYGAME] Lỗi:", error.message);
     }
@@ -438,12 +527,114 @@ function hideElements(selectorStr, category, rootNode = document) {
     }
 }
 
+// Ẩn "mềm": dùng opacity thay vì display:none để GIỮ NGUYÊN kích thước (offsetWidth/Height)
+// của các nút bên trong — nút "Bỏ qua" của QC nằm trong .ytp-ad-overlay-container,
+// display:none sẽ khiến nút mất box (offsetWidth = 0) và bộ auto-skip không bấm được.
+function hideElementsSoft(selectorStr, category, rootNode = document) {
+    const nodes = rootNode.querySelectorAll(selectorStr);
+    for (let i = 0; i < nodes.length; i++) {
+        const el = nodes[i];
+        if (hiddenElements.has(el)) continue;
+        hiddenElements.add(el);
+        el.style.setProperty("opacity", "0", "important");
+        el.style.setProperty("pointer-events", "none", "important");
+        incrementBlockCount(category);
+    }
+}
+
 function hideOverlayAds() {
-    hideElements(OVERLAY_SELECTOR_STR, "overlay", getPlayer() || document);
+    const root = getPlayer() || document;
+    // Soft selectors (chứa nút "Bỏ qua") phải dùng hideElementsSoft — display:none sẽ
+    // làm nút mất kích thước (offsetWidth = 0) → auto-skip không bấm được.
+    hideElementsSoft(SOFT_OVERLAY_SELECTOR_STR, "overlay", root);
+    hideElements(OVERLAY_SELECTOR_STR, "overlay", root);
 }
 
 function hideCompanionAds() {
     hideElements(BANNER_SELECTOR_STR, "banner", document);
+}
+
+// ---------- QUẢNG CÁO MUA SẮM (shopping ads) ----------
+// Dạng quảng cáo hiển thị MỘT THẺ SẢN PHẨM có giá (ví dụ "Thẻm tập Yoga cao cấp… 125.000₫
+// · Cửa hàng trình liên kết Shopee"). Nằm ở:
+//   • bảng "Sản phẩm" bên cạnh video (engagement panel)
+//   • dải sản phẩm dưới video / cạnh Shorts
+//   • sticker sản phẩm dán đè lên video (Shorts)
+// CSS đã ẩn bằng class "fg-no-shopping"; hàm này là lớp bảo vệ thứ hai:
+//   • chặn cả phần tử render muộn (YouTube chèn sau khi CSS áp dụng)
+//   • đếm số quảng cáo bị chặn vào thống kê (mục "Mua sắm")
+const SHOPPING_SELECTORS = [
+    "ytd-engagement-panel-section-list-renderer[target-id^='shopping_panel']",
+    "ytd-engagement-panel-section-list-renderer[target-id*='shopping']",
+    "ytd-product-list-renderer",
+    "ytd-merch-shelf-renderer",
+    "ytd-reel-shopping-shelf-renderer",
+    "yt-product-sticker-view-model",
+    ".ytOverlayProductStickerHost",
+    ".ytp-featured-product",
+    ".ytp-ad-shopping",
+    ".ytp-suggested-action",
+    "#sticker-layer",
+    "yt-overlay-sticker",
+    "ytd-watch-flexy #ticket-shelf",
+    "ytd-watch-flexy #pla-shelf",
+    "#offer-module",
+    ".carousel-offer-url-container",
+];
+const SHOPPING_SELECTOR_STR = SHOPPING_SELECTORS.join(",");
+let SHOPPING_SELECTORS_REMOTE = [];
+// Các node đã bị ta ẩn bằng inline style — cần nhớ lại để KHÔI PHỤC khi người dùng tắt setting.
+// Map: node -> giá trị inline "display" gốc của YouTube (null nếu không có) để khôi phục đúng.
+const hiddenShoppingEls = new Map();
+
+// Selector bổ sung từ cấu hình từ xa (YouTube đổi tên class → sửa trong release/remote-config.json)
+function applyRemoteShopping(list) {
+    if (!Array.isArray(list)) return;
+    const extra = [];
+    for (const raw of list.slice(0, 100)) {
+        const sel = String(raw || "").trim();
+        if (!sel || sel.length > 200 || /[{}<>]/.test(sel)) continue;
+        if (SHOPPING_SELECTORS.includes(sel) || extra.includes(sel)) continue;
+        try { document.createDocumentFragment().querySelector(sel); } catch { continue; }
+        extra.push(sel);
+    }
+    SHOPPING_SELECTORS_REMOTE = extra;
+}
+
+function shoppingSelectorStr() {
+    return SHOPPING_SELECTORS_REMOTE.length
+        ? SHOPPING_SELECTOR_STR + "," + SHOPPING_SELECTORS_REMOTE.join(",")
+        : SHOPPING_SELECTOR_STR;
+}
+
+function hideShoppingAds() {
+    const nodes = document.querySelectorAll(shoppingSelectorStr());
+    for (let i = 0; i < nodes.length; i++) {
+        const el = nodes[i];
+        if (hiddenElements.has(el)) continue;
+        hiddenElements.add(el);
+        // Nhớ lại display gốc của YouTube để khôi phục chính xác khi tắt setting
+        const origDisplay = el.style.getPropertyValue("display");
+        hiddenShoppingEls.set(el, origDisplay || null);
+        el.style.setProperty("display", "none", "important");
+        incrementBlockCount("shopping");
+    }
+}
+
+// Gỡ inline style đã đặt khi ẩn — dùng khi người dùng TẮT setting "Quảng cáo mua sắm".
+// Nếu không gỡ, các node đã ẩn vẫn ẩn mãi dù setting đã tắt (lỗi không hoàn tác được).
+function restoreShoppingAds() {
+    for (const [el, origDisplay] of [...hiddenShoppingEls]) {
+        if (!el.isConnected) { hiddenShoppingEls.delete(el); continue; }
+        if (origDisplay) {
+            el.style.setProperty("display", origDisplay);
+        } else {
+            el.style.removeProperty("display");
+        }
+        // Xoá khỏi hiddenElements để lần quét sau có thể ẩn lại nếu setting bật
+        hiddenElements.delete(el);
+    }
+    hiddenShoppingEls.clear();
 }
 
 let persistTimer = null;
@@ -535,7 +726,9 @@ function detectAndStoreUser() {
 
     clearTimeout(userDetectTimer);
     userDetectTimer = setTimeout(() => {
-        chrome.storage.local.get(["userStats"], (result) => {
+        // Đưa vào hàng đợi ghi storage để không đè lên flushStats() đang chạy song song.
+        enqueueStorageWrite(async () => {
+            const result = await chrome.storage.local.get(["userStats"]);
             const userStats = result.userStats || { currentId: "guest", users: {} };
             userStats.currentId = info.id;
             if (!userStats.users[info.id]) {
@@ -546,23 +739,27 @@ function detectAndStoreUser() {
                 }
                 if (info.avatar) userStats.users[info.id].avatar = info.avatar;
             }
-            chrome.storage.local.set({ userStats });
+            await chrome.storage.local.set({ userStats });
         });
     }, 400);
 }
 
 function flushStats() {
-    const delta = pendingBreakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0 };
+    const delta = pendingBreakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0, shopping: 0 };
     pendingBreakdown = null;
     const totalDelta = Object.values(delta).reduce((a, b) => a + b, 0);
     if (!totalDelta) return;
 
-    chrome.storage.local.get(["adsBlocked", "statsBreakdown", "statsHistory", "userStats"], (result) => {
+    // Serialize với detectAndStoreUser(): cả hai đều đọc→sửa→ghi userStats.
+    // Nếu chạy song song, mỗi bên giữ một bản sao cũ → bản ghi sau đè mất phần của bản trước.
+    enqueueStorageWrite(async () => {
+        const result = await chrome.storage.local.get(["adsBlocked", "statsBreakdown", "statsHistory", "userStats"]);
         const breakdown = {
             video: 0,
             banner: 0,
             overlay: 0,
             antiAdblock: 0,
+            shopping: 0,
             spotify: 0,
             ...(result.statsBreakdown || {}),
         };
@@ -591,7 +788,7 @@ function flushStats() {
         const nextTotal = (result.adsBlocked || 0) + totalDelta;
         adsBlockedCount = nextTotal;
 
-        chrome.storage.local.set({
+        await chrome.storage.local.set({
             adsBlocked: nextTotal,
             statsBreakdown: breakdown,
             statsHistory: history.slice(-7),
@@ -604,7 +801,7 @@ function incrementBlockCount(category) {
     adsBlockedCount++;
 
     if (!pendingBreakdown) {
-        pendingBreakdown = { video: 0, banner: 0, overlay: 0, antiAdblock: 0 };
+        pendingBreakdown = { video: 0, banner: 0, overlay: 0, antiAdblock: 0, shopping: 0 };
     }
     if (pendingBreakdown[category] !== undefined) {
         pendingBreakdown[category]++;

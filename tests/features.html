@@ -136,7 +136,11 @@ const tick = () => v.dispatchEvent(new Event("timeupdate"));
   check("R1 UI QC kieu moi chua co trong danh sach -> chua nhan dien (an toan)", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate}`);
   lic({ jumpAhead: false, pipButton: false }, { remote: { adSignals: [".new-ad-label-2027", "<<<loi>>>", "div[[["], skipButtons: [], antiAdblock: [] } });
   await sleep(600);
-  check("R2 cau hinh tu xa them selector moi -> nhan dien duoc QC", v.playbackRate === 16 && v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+  // Hành vi đã khôi phục theo bản 2.4.0: QC ngắn (15s) không có nút "Bỏ qua"
+  // → mute + tua 16x + nhảy tới cuối NGAY LẬP TỨC (không chờ nút).
+  check("R2 cau hinh tu xa them selector moi -> nhan dien duoc QC", v.muted && v.playbackRate === 16, `rate=${v.playbackRate} muted=${v.muted}`);
+  await sleep(7200);
+  check("R2b het cua so cho nut skip -> tua 16x", v.playbackRate === 16 && v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
   check("R3 selector loi trong cau hinh khong lam hong extension", !!window.__FG_TEST__.main);
   mp.classList.remove("ad-showing"); newBadge.remove();
   await sleep(600);

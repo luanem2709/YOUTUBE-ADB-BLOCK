@@ -29,15 +29,20 @@ const v = mp.querySelector("video");
 const sv = sp.querySelector("video");
 fakeMedia(v, 30); fakeMedia(sv, 25);
 mp.getPlaybackRate = () => 1;
+window.__FG_TEST__ = {};
 </script>
+<script src="/content-yt-net.js"></script>
 <script src="/content-main.js"></script>
 <script>
 const results = [];
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+window.addEventListener("error", (e) => { results.push("FAIL runtime error: " + e.message + " @" + e.lineno); document.getElementById("out").textContent = results.join("\n"); });
+window.addEventListener("unhandledrejection", (e) => { results.push("FAIL unhandled rejection: " + (e.reason && e.reason.message || e.reason)); document.getElementById("out").textContent = results.join("\n"); });
 function check(name, cond, extra) { results.push((cond ? "PASS " : "FAIL ") + name + (extra ? "  [" + extra + "]" : "")); }
 function addBadge(p) { const b = document.createElement("div"); b.className = "ytp-ad-badge"; b.style.cssText = "width:40px;height:20px"; b.textContent = "Ad"; p.appendChild(b); return b; }
 
 (async () => {
+ try {
   window.postMessage({ type: "FG_LICENSE", ok: true, settings: { blockVideo: true, muteAds: true, fastSkip: true }, whitelisted: false }, "*");
   await sleep(400);
 
@@ -252,7 +257,776 @@ function addBadge(p) { const b = document.createElement("div"); b.className = "y
   v.duration = 400; v.currentTime = 0; v.muted = false;
   await sleep(400);
 
+  // 18. LỖI THẬT: player.cancelAd() tồn tại nhưng KHÔNG làm gì (YouTube im lặng bỏ qua).
+  // Không được `return` sớm → phải còn fallback: bấm nút skip + mute + tua 16x.
+  let cancelCalls = 0, noopSkip = 0;
+  mp.cancelAd = () => { cancelCalls++; /* cố tình không làm gì */ };
+  const noopBtn = document.createElement("button");
+  noopBtn.className = "ytp-skip-ad-button";
+  noopBtn.style.cssText = "width:100px;height:36px";
+  noopBtn.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  noopBtn.onclick = () => noopSkip++;
+  mp.querySelector(".video-ads").appendChild(noopBtn);
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(1800);
+  check("18a cancelAd() khong an -> van goi fallback (bam nut skip)", noopSkip > 0, `skip=${noopSkip} cancel=${cancelCalls}`);
+  check("18b cancelAd() khong an -> van mute + tua 16x", v.muted === true && v.playbackRate === 16, `rate=${v.playbackRate} muted=${v.muted}`);
+  mp.classList.remove("ad-showing"); noopBtn.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(600);
+  check("18c het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+  delete mp.cancelAd;
+
+  // 19. Nút skip nằm trong .ytp-ad-overlay-container (bị CSS extension ẩn) → vẫn phải click được
+  let hiddenSkip = 0;
+  const ov = document.createElement("div");
+  ov.className = "ytp-ad-overlay-container";
+  const hBtn = document.createElement("button");
+  hBtn.className = "ytp-ad-skip-button-slot";
+  hBtn.style.cssText = "width:100px;height:36px";
+  hBtn.innerHTML = '<div class="ytp-ad-skip-button__text">Bỏ qua</div>';
+  hBtn.onclick = () => hiddenSkip++;
+  ov.appendChild(hBtn);
+  mp.querySelector(".video-ads").appendChild(ov);
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(600);
+  check("19 nut skip bi an (overlay-container) -> van bam duoc", hiddenSkip > 0, `clicked=${hiddenSkip}`);
+  mp.classList.remove("ad-showing"); ov.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(600);
+  check("19b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 20. LỖI "CHROME ĐỨNG": click nút skip → YouTube đổi class → MutationObserver →
+  // processPlayer → handleAd → click lại → vòng lặp microtask treo trình duyệt.
+  // Phải bảo đảm: (1) không bấm lại CÙNG một phần tử trong 3s, (2) tổng số lần bấm có trần.
+  let loopSkip = 0;
+  const loopBtn = document.createElement("button");
+  loopBtn.className = "ytp-skip-ad-button";
+  loopBtn.style.cssText = "width:100px;height:36px";
+  loopBtn.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  loopBtn.onclick = () => { loopSkip++; mp.classList.remove("ad-showing"); mp.classList.add("ad-showing"); };
+  mp.querySelector(".video-ads").appendChild(loopBtn);
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  // Đo độ trễ event loop: nếu vòng lặp microtask treo Chrome, timer sẽ bị trễ hàng trăm ms→vài giây
+  let maxLag = 0, lagCount = 0;
+  const t0 = Date.now();
+  const probe = () => {
+    const lag = Date.now() - t0;
+    maxLag = Math.max(maxLag, lag - tick);
+    tick = Date.now();
+    lagCount++;
+    if (lag < 3000) setTimeout(probe, 16);
+  };
+  let tick = Date.now();
+  setTimeout(probe, 16);
+  await sleep(3000);
+  check("20a vong lap click khong treo trinh duyet (event loop responsive)", maxLag < 500, `maxLag=${maxLag}ms ticks=${lagCount}`);
+  check("20b so lan click bi chan (khong spam)", loopSkip <= 3, `clicks=${loopSkip}`);
+  mp.classList.remove("ad-showing"); loopBtn.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(600);
+  check("20c het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 21. giveUp (dừng thao tác sau 12s) phải reset khi vào QC mới — không kẹt vĩnh viễn
+  const gvBtn = document.createElement("button");
+  gvBtn.className = "ytp-skip-ad-button";
+  gvBtn.style.cssText = "width:100px;height:36px";
+  gvBtn.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  mp.querySelector(".video-ads").appendChild(gvBtn);
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(400);
+  mp.classList.remove("ad-showing");
+  await sleep(800);
+  // QC thứ 2 ngay sau đó — phải vẫn được xử lý (không bị giveUp kẹt)
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(500);
+  check("21 QC moi sau QC cuoi van duoc xu ly", v.playbackRate === 16 || v.muted === true, `rate=${v.playbackRate} muted=${v.muted}`);
+  mp.classList.remove("ad-showing"); gvBtn.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(600);
+  check("21b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 22. cancelAd() phải được gọi ĐÚNG MỘT LẦN cho mỗi QC.
+  // Gọi lặp lại (mỗi 2s) khiến player YouTube re-init liên tục → Chrome đứng/đơ.
+  let cc2 = 0;
+  mp.cancelAd = () => { cc2++; };
+  const ccBtn = document.createElement("button");
+  ccBtn.className = "ytp-skip-ad-button";
+  ccBtn.style.cssText = "width:100px;height:36px";
+  ccBtn.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  mp.querySelector(".video-ads").appendChild(ccBtn);
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(5000);
+  check("22 cancelAd() chi goi MOT LAN cho 1 QC", cc2 <= 1, `calls=${cc2}`);
+  mp.classList.remove("ad-showing"); ccBtn.remove();
+  delete mp.cancelAd;
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(600);
+  check("22b het QC -> khoi phuc", v.playbookRate === undefined && v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 23. QC bumper (YouTube 2025+): không gắn class ad-showing, chỉ có overlay + badge.
+  const bumpOverlay = document.createElement("div");
+  bumpOverlay.className = "ytp-ad-player-overlay-layer";
+  bumpOverlay.style.cssText = "width:400px;height:200px";
+  const bumpBadge = document.createElement("div");
+  bumpBadge.className = "ytp-ad-simple-ad-badge";
+  bumpBadge.style.cssText = "width:80px;height:20px";
+  bumpBadge.textContent = "Quảng cáo";
+  bumpOverlay.appendChild(bumpBadge);
+  mp.querySelector(".video-ads").appendChild(bumpOverlay);
+  v.duration = 6; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  await sleep(700);
+  check("23 QC bumper khong co class -> van duoc xac nhan", v.playbackRate === 16 || v.muted === true, `rate=${v.playbackRate} muted=${v.muted}`);
+  bumpOverlay.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("23b het QC bumper -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 24. Overlay RỖNG (không phải QC) -> KHÔNG được tua nhầm video chính
+  const emptyOverlay = document.createElement("div");
+  emptyOverlay.className = "ytp-ad-player-overlay-layer";
+  emptyOverlay.style.cssText = "width:400px;height:200px";
+  mp.querySelector(".video-ads").appendChild(emptyOverlay);
+  v.duration = 400; v.currentTime = 5; v.playbackRate = 1; v.muted = false;
+  await sleep(700);
+  check("24 overlay rong (khong phai QC) -> khong tua video chinh", v.playbackRate === 1 && !v.muted && v.currentTime === 5, `rate=${v.playbackRate} muted=${v.muted} t=${v.currentTime}`);
+  emptyOverlay.remove();
+  await sleep(400);
+
+  // 25. LỖI THẬT: nút "Bỏ qua" nằm trong thẻ <a href="..."> (YouTube hay bọc link quảng cáo).
+  // Bấm vào -> trình duyệt NHẢY sang trang quảng cáo. Phải KHÔNG click thẻ <a>.
+  let anchorClicked = 0;
+  const adAnchor = document.createElement("a");
+  adAnchor.href = "https://ads.example.com/landing";
+  adAnchor.style.cssText = "width:120px;height:36px;display:block";
+  adAnchor.innerHTML = '<button class="ytp-skip-ad-button" style="width:100px;height:36px">Bỏ qua</button>';
+  adAnchor.addEventListener("click", () => { anchorClicked++; });
+  mp.querySelector(".video-ads").appendChild(adAnchor);
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(800);
+  check("25 khong click the <a> chua nut skip (tranh nhay trang QC)", anchorClicked === 0, `anchorClicks=${anchorClicked}`);
+  adAnchor.remove();
+  mp.classList.remove("ad-showing");
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("25b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 26. Nút skip là <button> bình thường (KHÔNG trong <a>) -> vẫn phải bấm được
+  let okSkip = 0;
+  const okBtn = document.createElement("button");
+  okBtn.className = "ytp-skip-ad-button";
+  okBtn.style.cssText = "width:100px;height:36px";
+  okBtn.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  okBtn.onclick = () => okSkip++;
+  mp.querySelector(".video-ads").appendChild(okBtn);
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(800);
+  check("26 nut skip <button> binh thuong van bam duoc", okSkip > 0, `clicks=${okSkip}`);
+  mp.classList.remove("ad-showing"); okBtn.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("26b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 27. Slot bao nút skip (div) -> phải tìm <button> bên trong để bấm, không bấm cả slot
+  let slotSkip = 0, slotClicked = 0;
+  const slot = document.createElement("div");
+  slot.className = "ytp-ad-skip-button-slot";
+  slot.style.cssText = "width:140px;height:44px";
+  slot.onclick = () => slotClicked++;
+  const slotInner = document.createElement("button");
+  slotInner.className = "ytp-ad-skip-button-modern";
+  slotInner.style.cssText = "width:100px;height:36px";
+  slotInner.textContent = "Bỏ qua";
+  slotInner.onclick = (e) => { e.stopPropagation(); slotSkip++; };
+  slot.appendChild(slotInner);
+  mp.querySelector(".video-ads").appendChild(slot);
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(800);
+  check("27 tim nut <button> trong slot va bam dung", slotSkip > 0, `inner=${slotSkip} slot=${slotClicked}`);
+  mp.classList.remove("ad-showing"); slot.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("27b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 29. NÚT SKIP KIỂU THẬT CỦA YOUTUBE (ảnh thật): <div class="ytp-skip-ad-button ytp-ad-component--clickable">
+  // KHÔNG phải <button>! Selector cũ chỉ dò "button.ytp-skip-ad-button" → không bao giờ bấm được
+  // → QC chạy trọn vẹn → QC tiếp theo hiện tiếp (triệu chứng "QC hiện liên tục").
+  let divSkip = 0;
+  const divBtn = document.createElement("div");
+  divBtn.className = "ytp-skip-ad-button ytp-ad-component--clickable";
+  divBtn.style.cssText = "width:100px;height:36px";
+  divBtn.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  divBtn.addEventListener("click", () => divSkip++);
+  mp.querySelector(".video-ads").appendChild(divBtn);
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(800);
+  check("29 nut skip la <div> (kieu YouTube that) -> van bam duoc", divSkip > 0, `clicks=${divSkip}`);
+  mp.classList.remove("ad-showing"); divBtn.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("29b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 30. QC không có nút skip (chỉ overlay) -> phải tua 16x + seek tới cuoi (khong phai phat het QC)
+  const onlyOverlay = document.createElement("div");
+  onlyOverlay.className = "ytp-ad-player-overlay-layer";
+  onlyOverlay.style.cssText = "width:400px;height:200px";
+  const onlyBadge = document.createElement("div");
+  onlyBadge.className = "ytp-ad-simple-ad-badge";
+  onlyBadge.style.cssText = "width:80px;height:20px";
+  onlyBadge.textContent = "Quảng cáo";
+  onlyOverlay.appendChild(onlyBadge);
+  mp.querySelector(".video-ads").appendChild(onlyOverlay);
+  v.duration = 6; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(800);
+  check("30 QC khong nut skip -> tua nhanh toi cuoi", v.playbackRate === 16, `rate=${v.playbackRate}`);
+  mp.classList.remove("ad-showing"); onlyOverlay.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("30b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 31. Class "fg-ad-active" trên <html> phải bật khi có QC (CSS ẩn lớp phủ QC)
+  //     và tắt khi hết QC → người dùng không thấy QC hiện lên.
+  const html = document.documentElement;
+  const adBtn2 = document.createElement("div");
+  adBtn2.className = "ytp-skip-ad-button ytp-ad-component--clickable";
+  adBtn2.style.cssText = "width:100px;height:36px";
+  adBtn2.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  mp.querySelector(".video-ads").appendChild(adBtn2);
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(600);
+  check("31 class fg-ad-active bat khi co QC", html.classList.contains("fg-ad-active"), `cls="${html.className}"`);
+  mp.classList.remove("ad-showing"); adBtn2.remove();
+  await sleep(900);
+  check("31b class fg-ad-active tat khi het QC", !html.classList.contains("fg-ad-active"), `cls="${html.className}"`);
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(600);
+  check("31c het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 32. NÚT SKIP XUẤT HIỆN SAU (như thật: YouTube hiện sau ~5s).
+  // Khi đó KHÔNG được tua 16x trước khi có nút — và phải BẤM được nút.
+  let lateSkip = 0;
+  v.duration = 30; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(500);
+  check("32 chua co nut skip -> CHUA tua 16x (cho nut xuat hien)", v.playbackRate !== 16, `rate=${v.playbackRate}`);
+  const lateBtn = document.createElement("div");
+  lateBtn.className = "ytp-skip-ad-button ytp-ad-component--clickable";
+  lateBtn.style.cssText = "width:100px;height:36px";
+  lateBtn.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  lateBtn.addEventListener("click", () => lateSkip++);
+  mp.querySelector(".video-ads").appendChild(lateBtn);
+  await sleep(1200);
+  check("32b nut skip xuat hien -> da bam duoc", lateSkip > 0, `clicks=${lateSkip}`);
+  mp.classList.remove("ad-showing"); lateBtn.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("32c het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 33. Nút skip nằm trong cha bị display:none -> KHÔNG được bấm (tránh bấm nút ẩn)
+  let hiddenSkip33 = 0;
+  const hiddenWrap = document.createElement("div");
+  hiddenWrap.className = "ytp-ad-overlay-slot";
+  hiddenWrap.style.cssText = "width:140px;height:44px;display:none";
+  const hiddenBtn = document.createElement("div");
+  hiddenBtn.className = "ytp-skip-ad-button ytp-ad-component--clickable";
+  hiddenBtn.style.cssText = "width:100px;height:36px";
+  hiddenBtn.textContent = "Bỏ qua";
+  hiddenBtn.addEventListener("click", () => hiddenSkip33++);
+  hiddenWrap.appendChild(hiddenBtn);
+  mp.querySelector(".video-ads").appendChild(hiddenWrap);
+  v.duration = 30; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  await sleep(800);
+  check("33 nut skip bi an (cha display:none) -> khong bam", hiddenSkip33 === 0, `clicks=${hiddenSkip33}`);
+  mp.classList.remove("ad-showing"); hiddenWrap.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("33b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 34. QC dài (>20s) CÓ nút "Bỏ qua" → phải BẤM NÚT (không tua 16x thẳng,
+  // vì tua trước khi nút nhận click → QC vẫn phát).
+  v.duration = 45; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge34 = addBadge(mp);
+  const btn34 = document.createElement("div");
+  btn34.className = "ytp-skip-ad-button ytp-ad-component--clickable";
+  btn34.style.cssText = "width:100px;height:36px";
+  btn34.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  let clicked34 = 0;
+  btn34.addEventListener("click", () => clicked34++);
+  mp.querySelector(".video-ads").appendChild(btn34);
+  await sleep(600);
+  check("34 QC dai co nut -> da bam nut Bo qua", clicked34 > 0, `clicks=${clicked34}`);
+  check("34b QC co nut -> KHONG tua 16x (cho nut an)", v.playbackRate !== 16, `rate=${v.playbackRate}`);
+  mp.classList.remove("ad-showing"); badge34.remove(); btn34.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("34c het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 36. FAST PATH: nút "Bỏ qua" xuất hiện SAU khi QC đã chạy → phải bấm được
+  // ngay khoảnh khắc node được thêm vào DOM (không chờ lượt quét 300ms).
+  v.duration = 45; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge36 = addBadge(mp);
+  await sleep(400);
+  let clicked36 = 0;
+  // Thêm nút skip SAU (mô phỏng nút xuất hiện giữa chừng QC)
+  const btn36 = document.createElement("div");
+  btn36.className = "ytp-skip-ad-button ytp-ad-component--clickable";
+  btn36.style.cssText = "width:100px;height:36px";
+  btn36.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  btn36.addEventListener("click", () => clicked36++);
+  setTimeout(() => {
+    mp.querySelector(".video-ads").appendChild(btn36);
+  }, 300);
+  await sleep(900);
+  check("36 nut skip xuat hien giua QC -> bam duoc", clicked36 > 0, `clicks=${clicked36}`);
+  mp.classList.remove("ad-showing"); badge36.remove(); btn36.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("36b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 34d. QC KHÔNG có nút "Bỏ qua" → tua 16x + seek cuối ngay (đúng cách 2.4.0)
+  v.duration = 45; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge34d = addBadge(mp);
+  await sleep(2200);
+  check("34d QC khong nut skip -> tua 16x + seek cuoi", v.playbackRate === 16 && v.currentTime >= 44.8, `rate=${v.playbackRate} t=${v.currentTime}`);
+  mp.classList.remove("ad-showing"); badge34d.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("34e het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 35. YouTube reset QC về đầu sau khi ta seek -> phai seek lai (khong de QC chay lai tu 0)
+  v.duration = 30; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge35 = addBadge(mp);
+  await sleep(2200);
+  const tAfterFirstSeek = v.currentTime;
+  check("35 da seek toi cuoi QC", tAfterFirstSeek >= 29.8, `t=${tAfterFirstSeek}`);
+  // Giả lập YouTube reset QC về 0
+  v.currentTime = 0;
+  await sleep(1600);
+  check("35b QC bi reset ve dau -> da seek lai", v.currentTime >= 29.8, `t=${v.currentTime}`);
+  mp.classList.remove("ad-showing"); badge35.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("35c het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 37. REGRESSION (báo lỗi QC 2.4.7): DOM interstitial thật của YouTube.
+  // Nút CTA của NHÀ QUẢNG CÁO (button#ad-button:t.ytp-ad-button-vm) nằm TRƯỚC
+  // nút "Bỏ qua" (button#skip-button:y.ytp-skip-ad-button) trong thứ tự DOM.
+  // Trước đây ta bấm CTA → nhảy sang trang QC + nút "Bỏ qua" không bao giờ được bấm
+  // → QC hiện liên tục. Yêu cầu: (a) KHÔNG bấm CTA, (b) bấm ĐÚNG nút "Bỏ qua".
+  v.duration = null; v.currentTime = 0; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  mp.classList.add("ended-mode");
+  const badge37 = addBadge(mp);
+  const inter37 = document.createElement("div");
+  inter37.className = "ytp-video-interstitial-buttoned-centered-layout";
+  inter37.style.cssText = "width:400px;height:200px";
+  const cta37 = document.createElement("button");
+  cta37.id = "ad-button:t";
+  cta37.className = "ytp-ad-button-vm ytp-ad-component--clickable ytp-ad-button-vm--style-filled-white";
+  cta37.style.cssText = "width:120px;height:36px";
+  cta37.innerHTML = '<span class="ytp-ad-button-vm__text">Mua ngay</span>';
+  let ctaClicked37 = 0;
+  cta37.addEventListener("click", () => ctaClicked37++);
+  const skip37 = document.createElement("button");
+  skip37.id = "skip-button:y";
+  skip37.className = "ytp-skip-ad-button";
+  skip37.style.cssText = "width:100px;height:36px";
+  skip37.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  let skipClicked37 = 0;
+  skip37.addEventListener("click", () => skipClicked37++);
+  inter37.appendChild(cta37);
+  inter37.appendChild(skip37);
+  mp.appendChild(inter37);
+  await sleep(1200);
+  check("37 KHONG bam nut CTA cua nha quang cao", ctaClicked37 === 0, `ctaClicks=${ctaClicked37}`);
+  check("37b nut Bo qua (skip-button:y) da duoc bam", skipClicked37 > 0, `skipClicks=${skipClicked37}`);
+  mp.classList.remove("ad-showing");
+  mp.classList.remove("ended-mode");
+  badge37.remove(); inter37.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("37c het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 38. REGRESSION: nút skip dạng <div> nằm trong vùng interstitial NGOÀI .video-ads
+  // → observer cũ (chỉ .video-ads/.ytp-ad-module/.ytp-ad-player-overlay) không bắt
+  // được → phải bấm được.
+  v.duration = null; v.currentTime = 0; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge38 = addBadge(mp);
+  let skipClicked38 = 0;
+  let inter38 = null;
+  setTimeout(() => {
+    inter38 = document.createElement("div");
+    inter38.className = "ytp-video-interstitial-buttoned-centered-layout";
+    inter38.style.cssText = "width:400px;height:200px";
+    const b38 = document.createElement("div");
+    b38.className = "ytp-skip-ad-button ytp-ad-component--clickable";
+    b38.style.cssText = "width:100px;height:36px";
+    b38.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+    b38.addEventListener("click", () => skipClicked38++);
+    inter38.appendChild(b38);
+    mp.appendChild(inter38);
+  }, 400);
+  await sleep(1400);
+  check("38 nut skip trong vung interstitial ngoai .video-ads -> bam duoc", skipClicked38 > 0, `clicks=${skipClicked38}`);
+  mp.classList.remove("ad-showing"); badge38.remove();
+  // BẮT BUỘC xóa interstitial — nếu để lại, nút "Bỏ qua" vẫn còn trong DOM
+  // → các test sau bị coi là đang có QC → kẹt 16x (rò rỉ trạng thái giữa các test).
+  if (inter38) inter38.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("38b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 28. Nav guard: điều hướng bị chặn trong lúc bấm QC (Navigation API)
+  const M = window.__FG_TEST__ && window.__FG_TEST__.main;
+  check("28 hook nav guard co san", !!(M && typeof M.getNavBlocked === "function"), "hook thieu");
+  if (M && M.getNavBlocked) {
+    const before = M.getNavBlocked();
+    // Mô phỏng bấm QC: bọc hành động điều hướng bằng guard
+    if (M.withNavGuard) {
+      M.withNavGuard(() => {
+        // Tạo <a> và bấm → Navigation API phải chặn
+        const a = document.createElement("a");
+        a.href = "https://ads.example.com/landing";
+        a.id = "fg-nav-probe";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      });
+    }
+    await sleep(300);
+    check("28 dieu huong bi chan trong luc bam QC", M.getNavBlocked() > before, `blocked ${before}->${M.getNavBlocked()}`);
+    check("28b trang van o lai (khong nhay sang trang QC)", location.href.indexOf("ads.example.com") === -1, location.href.slice(0, 80));
+  } else {
+    check("28 dieu huong bi chan trong luc bam QC", false, "khong co hook");
+    check("28b trang van o lai", false, "khong co hook");
+  }
+  await sleep(400);
+
+  // 39. REGRESSION (báo cáo người dùng): nút "Bỏ qua" BẤM KHÔNG ĂN
+  // (YouTube render nút nhưng handler không phản ứng) → KHÔNG được đứng yên chờ QC hết thời lượng.
+  // Phải tự tua tới cuối QC sau ~1.2s (SKIP_FALLBACK_MS).
+  v.duration = 60; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge39 = addBadge(mp);
+  const btn39 = document.createElement("div");
+  btn39.className = "ytp-skip-ad-button ytp-ad-component--clickable";
+  btn39.style.cssText = "width:100px;height:36px";
+  btn39.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  let clicked39 = 0;
+  btn39.addEventListener("click", () => clicked39++);   // click có ghi nhận nhưng KHÔNG đổi state QC
+  mp.querySelector(".video-ads").appendChild(btn39);
+  await sleep(3500);
+  check("39 nut skip khong an -> da tua toi cuoi QC (khong doi chay het)", v.currentTime >= 59.8, `t=${v.currentTime} clicks=${clicked39}`);
+  mp.classList.remove("ad-showing"); badge39.remove(); btn39.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("39b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 40. Nút "Bỏ qua" ăn ngay → QC kết thúc nhanh, KHÔNG seek tới cuối (giữ hành vi tự nhiên)
+  v.duration = 45; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge40 = addBadge(mp);
+  const btn40 = document.createElement("button");
+  btn40.className = "ytp-skip-ad-button";
+  btn40.style.cssText = "width:100px;height:36px";
+  btn40.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  let clicked40 = 0;
+  btn40.onclick = () => { clicked40++; mp.classList.remove("ad-showing"); badge40.remove(); btn40.remove(); };
+  mp.querySelector(".video-ads").appendChild(btn40);
+  await sleep(900);
+  check("40 nut skip an ngay -> QC ket thuc, da bam nut", clicked40 > 0, `clicks=${clicked40}`);
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("40b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 41. Nút "Bỏ qua" dạng <div> với class LẠ (YouTube đổi tên class) → vẫn phải bấm được
+  // (Pass 3: tìm theo CHỮ trong mọi vùng QC)
+  v.duration = 45; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge41 = addBadge(mp);
+  const btn41 = document.createElement("div");
+  btn41.className = "ytp-ad-component--clickable zzz-unknown-class-2026";
+  btn41.style.cssText = "width:110px;height:36px";
+  btn41.textContent = "Bỏ qua quảng cáo";
+  let clicked41 = 0;
+  btn41.addEventListener("click", () => clicked41++);
+  mp.querySelector(".video-ads").appendChild(btn41);
+  await sleep(900);
+  check("41 nut skip class la -> van tim thay qua text va bam duoc", clicked41 > 0, `clicks=${clicked41}`);
+  mp.classList.remove("ad-showing"); badge41.remove(); btn41.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("41b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 42. Nút "Bỏ qua" nằm NGOÀI .video-ads, trong vùng interstitial → phải bấm được (Pass 3)
+  v.duration = 45; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge42 = addBadge(mp);
+  let clicked42 = 0;
+  const btn42 = document.createElement("div");
+  btn42.className = "ytp-ad-component--clickable ytp-skip-ad-button";
+  btn42.style.cssText = "width:110px;height:36px";
+  btn42.textContent = "Bỏ qua";
+  btn42.addEventListener("click", () => clicked42++);
+  const inter42 = document.createElement("div");
+  inter42.className = "ytp-video-interstitial-buttoned-centered-layout";
+  inter42.style.cssText = "width:400px;height:200px";
+  inter42.appendChild(btn42);
+  mp.appendChild(inter42);
+  await sleep(900);
+  check("42 nut skip ngoai .video-ads (interstitial) -> bam duoc", clicked42 > 0, `clicks=${clicked42}`);
+  mp.classList.remove("ad-showing"); badge42.remove(); inter42.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("42b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 43. QC dài KHÔNG có nút "Bỏ qua" + KHÔNG buffer tới cuối → phải seek tới cuối
+  // (không phụ thuộc buffer) thay vì chạy 16x tới hết QC.
+  v.duration = 60; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  // Ghi đè buffered: KHÔNG có gì buffer (mô phỏng mạng yếu — QC chưa tải hết)
+  Object.defineProperty(v, "buffered", { configurable: true, get: () => ({ length: 0, start: () => 0, end: () => 0 }) });
+  mp.classList.add("ad-showing");
+  const badge43 = addBadge(mp);
+  await sleep(2500);
+  check("43 QC khong nut skip + khong buffer -> da seek toi cuoi", v.currentTime >= 59.8, `t=${v.currentTime}`);
+  mp.classList.remove("ad-showing"); badge43.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("43b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+  // Khôi phục buffered giả
+  Object.defineProperty(v, "buffered", { configurable: true, get: () => ({
+    length: isFinite(v.duration) && v.duration > 0 ? 1 : 0, start: () => 0, end: () => v.duration,
+  }) });
+
+  // 44. QC CÓ nút "Bỏ qua" → ưu tiên bấm nút, KHÔNG seek tới cuối ngay (để YouTube tự chuyển)
+  v.duration = 45; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge44 = addBadge(mp);
+  const btn44 = document.createElement("button");
+  btn44.className = "ytp-skip-ad-button";
+  btn44.style.cssText = "width:100px;height:36px";
+  btn44.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  let clicked44 = 0;
+  btn44.onclick = () => clicked44++;   // KHÔNG kết thúc QC -> kiểm tra fallback hoạt động
+  mp.querySelector(".video-ads").appendChild(btn44);
+  await sleep(700);
+  check("44 QC co nut skip -> da bam nut", clicked44 > 0, `clicks=${clicked44}`);
+  mp.classList.remove("ad-showing"); badge44.remove(); btn44.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("44b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 45. REGRESSION (báo lỗi thật 2.4.12, video j8U06veqxdU):
+  //     playerClass = "... ytp-transparent ... ad-created ytp-branding-shown
+  //                    playing-mode buffering-mode unstarted-mode"
+  //     → KHÔNG có "ad-showing"/"ad-interrupting" → hasAdClass() = false
+  //     → trước đây isConfirmedAd() = false → KHÔNG xử lý QC → QC hiện ra cho người dùng.
+  //     Nay phải nhận biết QC qua "ad-created" + UI QC hiển thị trong .video-ads.
+  v.duration = 30; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.remove("ad-showing");
+  mp.classList.add("ad-created");
+  mp.classList.add("ytp-branding-shown");
+  // Badge QC thực tế nằm TRONG .video-ads
+  const badge45 = document.createElement("div");
+  badge45.className = "ytp-ad-simple-ad-badge";
+  badge45.style.cssText = "width:80px;height:20px";
+  badge45.textContent = "Quảng cáo";
+  mp.querySelector(".video-ads").appendChild(badge45);
+  await sleep(2200);
+  check("45 QC kieu moi (chi co ad-created, khong ad-showing) -> van duoc xu ly",
+    v.playbackRate === 16 && v.muted === true, `rate=${v.playbackRate} muted=${v.muted}`);
+  check("45b video QC duoc an (opacity 0) -> nguoi dung khong thay QC",
+    v.style.opacity === "0", `opacity="${v.style.opacity}"`);
+  mp.classList.remove("ad-created");
+  mp.classList.remove("ytp-branding-shown");
+  badge45.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(900);
+  check("45c het QC -> khoi phuc", v.playbackRate === 1 && !v.muted && v.style.opacity !== "0",
+    `rate=${v.playbackRate} muted=${v.muted} opacity="${v.style.opacity}"`);
+
+  // 46. "ad-created" có mặt nhưng KHÔNG có UI QC nào hiển thị → KHÔNG được coi là QC
+  // (tránh tua nhầm video chính — class "ad-created" được giữ lại sau khi QC kết thúc).
+  v.duration = 400; v.currentTime = 7; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-created");
+  mp.classList.add("ytp-branding-shown");
+  await sleep(1200);
+  check("46 ad-created nhung khong co UI QC -> KHONG tua video chinh",
+    v.playbackRate === 1 && !v.muted && v.currentTime === 7, `rate=${v.playbackRate} muted=${v.muted} t=${v.currentTime}`);
+  mp.classList.remove("ad-created");
+  mp.classList.remove("ytp-branding-shown");
+  await sleep(400);
+
+  // 47. QC có nút "Bỏ qua" + chỉ có "ad-created" → phải BẤM được nút (đường nhận biết mới)
+  v.duration = 45; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-created");
+  const badge47 = document.createElement("div");
+  badge47.className = "ytp-ad-simple-ad-badge";
+  badge47.style.cssText = "width:80px;height:20px";
+  mp.querySelector(".video-ads").appendChild(badge47);
+  let clicked47 = 0;
+  const btn47 = document.createElement("div");
+  btn47.className = "ytp-skip-ad-button ytp-ad-component--clickable";
+  btn47.style.cssText = "width:100px;height:36px";
+  btn47.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+  btn47.addEventListener("click", () => clicked47++);
+  mp.querySelector(".video-ads").appendChild(btn47);
+  await sleep(1200);
+  check("47 QC kieu moi co nut Bo qua -> da bam duoc", clicked47 > 0, `clicks=${clicked47}`);
+  mp.classList.remove("ad-created");
+  badge47.remove(); btn47.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(900);
+  check("47b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 48. Nút "Bỏ qua" xuất hiện MUỘN (sau khi QC đã chạy) → phải bấm được ngay
+  // (MutationObserver theo dõi vùng UI QC, không chờ lượt quét 300ms).
+  v.duration = 45; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-created");
+  const badge48 = document.createElement("div");
+  badge48.className = "ytp-ad-simple-ad-badge";
+  badge48.style.cssText = "width:80px;height:20px";
+  mp.querySelector(".video-ads").appendChild(badge48);
+  await sleep(400);
+  let clicked48 = 0;
+  setTimeout(() => {
+    const b48 = document.createElement("div");
+    b48.className = "ytp-skip-ad-button ytp-ad-component--clickable";
+    b48.style.cssText = "width:100px;height:36px";
+    b48.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
+    b48.addEventListener("click", () => clicked48++);
+    mp.querySelector(".video-ads").appendChild(b48);
+  }, 300);
+  await sleep(1200);
+  check("48 nut skip xuat hien muon (QC kieu moi) -> bam duoc", clicked48 > 0, `clicks=${clicked48}`);
+  mp.classList.remove("ad-created");
+  badge48.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(900);
+  check("48b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 49. QC kiểu mới: "ad-created" + "ytp-branding-shown" + overlay trong .video-ads
+  // (KHÔNG có badge, KHÔNG có nút "Bỏ qua") → vẫn phải nhận biết được là QC.
+  v.duration = 30; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-created");
+  mp.classList.add("ytp-branding-shown");
+  const ov49 = document.createElement("div");
+  ov49.className = "ytp-ad-player-overlay-layer";
+  ov49.style.cssText = "width:400px;height:200px";
+  mp.querySelector(".video-ads").appendChild(ov49);
+  await sleep(2200);
+  check("49 ad-created + branding + overlay (khong badge) -> nhan dien QC",
+    v.playbackRate === 16 && v.muted === true && v.style.opacity === "0",
+    `rate=${v.playbackRate} muted=${v.muted} opacity="${v.style.opacity}"`);
+  mp.classList.remove("ad-created");
+  mp.classList.remove("ytp-branding-shown");
+  ov49.remove();
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(900);
+  check("49b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted && v.style.opacity !== "0",
+    `rate=${v.playbackRate} muted=${v.muted} opacity="${v.style.opacity}"`);
+
+  // 50. player.skipAd() phải được gọi khi vào QC (bỏ qua tức thì, không cần nút "Bỏ qua").
+  // Đồng thời phải CÓ giới hạn tần suất để không treo trình duyệt.
+  let apiCalls = 0;
+  mp.skipAd = () => { apiCalls++; };
+  v.duration = 15; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge50 = addBadge(mp);
+  await sleep(1000);
+  check("50 vao QC -> goi player.skipAd() ngay", apiCalls > 0, `calls=${apiCalls}`);
+  mp.classList.remove("ad-showing"); badge50.remove();
+  delete mp.skipAd;
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("50b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 51. Giới hạn tần suất gọi skipAd(): không spam (tránh treo trình duyệt)
+  let apiCalls51 = 0;
+  mp.skipAd = () => { apiCalls51++; };
+  v.duration = 20; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
+  mp.classList.add("ad-showing");
+  const badge51 = addBadge(mp);
+  await sleep(5000);
+  check("51 skipAd() co gioi han tan suat (khong spam)", apiCalls51 <= 5, `calls=${apiCalls51}`);
+  mp.classList.remove("ad-showing"); badge51.remove();
+  delete mp.skipAd;
+  v.duration = 400; v.currentTime = 0; v.muted = false;
+  await sleep(700);
+  check("51b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
+
+  // 52. Diagnostics phải có nhóm "net" (lớp chặn tầng mạng) để chẩn đoán
+  let diagToken = null;
+  const onTok = (e) => { if (e.data && e.data.type === "FG_TOKEN_READY") diagToken = e.data.token; };
+  window.addEventListener("message", onTok);
+  window.postMessage({ type: "FG_TOKEN_REQUEST" }, "*");
+  await sleep(200);
+  window.removeEventListener("message", onTok);
+  const diag = await new Promise((resolve) => {
+    const id = Math.random().toString(36).slice(2);
+    const onRes = (e) => {
+      if (e.source !== window || !e.data || e.data.type !== "FG_DIAG_RES" || e.data.id !== id) return;
+      window.removeEventListener("message", onRes);
+      resolve(e.data.data);
+    };
+    window.addEventListener("message", onRes);
+    window.postMessage({ type: "FG_DIAG_REQ", token: diagToken, id }, "*");
+    setTimeout(() => resolve(null), 1200);
+  });
+  check("52 diagnostics co nhom 'net'", !!diag && Object.prototype.hasOwnProperty.call(diag, "net"),
+    diag ? JSON.stringify(diag.net) : "null");
+
+  // 53. RÒ RỈ BỘ NHỚ: player bị YouTube gỡ khỏi DOM phải được giải phóng hoàn toàn.
+  //     MutationObserver giữ tham chiếu mạnh tới player → nếu không disconnect,
+  //     mỗi lần SPA thay player sẽ giữ lại player cũ (+ cây con) vĩnh viễn.
+  const M53 = window.__FG_TEST__ && window.__FG_TEST__.main;
+  check("53 hook theo doi player co san", !!(M53 && typeof M53.getTracked === "function"),
+    M53 && typeof M53.getTracked === "function" ? "OK" : "thieu getTracked");
+  if (M53 && M53.getTracked) {
+    const before53 = M53.getTracked();
+    check("53b co player dang duoc theo doi", before53.players >= 1 && before53.observers >= 1,
+      JSON.stringify(before53));
+
+    // Tạo player giả rồi gỡ khỏi DOM ngay
+    const ghost = document.createElement("div");
+    ghost.className = "html5-video-player";
+    ghost.id = "fg-ghost-player";
+    document.body.appendChild(ghost);
+    await sleep(400);
+    const during53 = M53.getTracked();
+    check("53c player gia duoc theo doi", during53.players >= before53.players + 1, JSON.stringify(during53));
+
+    ghost.remove();
+    await sleep(700);
+    const after53 = M53.getTracked();
+    check("53d player bi go khoi DOM -> duoc giai phong",
+      after53.players === before53.players && after53.observers === before53.observers,
+      `before=${JSON.stringify(before53)} after=${JSON.stringify(after53)}`);
+  }
+
   document.getElementById("out").textContent = results.join("\n");
+ } catch (e) {
+   results.push("FAIL exception: " + (e && e.message ? e.message : e));
+   document.getElementById("out").textContent = results.join("\n");
+ }
 })();
 </script>
 </body></html>

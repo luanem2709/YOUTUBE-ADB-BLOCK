@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html dark><head><meta charset="utf-8">
+<link rel="stylesheet" href="/content.css">
+</head><body>
+<!--
+  Test quảng cáo MUA SẮM (shopping ads) — dạng thẻ sản phẩm có giá
+  (ví dụ "Thẻm tập Yoga cao cấp… 125.000₫ · Cửa hàng trình liên kết Shopee").
+
+  Bối cảnh: bảng "Sản phẩm" bên cạnh video + dải sản phẩm dưới video +
+  sticker sản phẩm dán đè lên player (Shorts) + panel "Mua sắm".
+-->
+<div id="movie_player" class="html5-video-player" style="width:640px;height:360px">
+  <video class="html5-main-video" style="width:640px;height:360px"></video>
+  <div class="video-ads ytp-ad-module"></div>
+</div>
+
+<!-- Panel "Sản phẩm" bên cạnh video -->
+<ytd-engagement-panel-section-list-renderer id="shopPanel" target-id="shopping_panel_for_entry_point" style="display:block">
+  <div id="shopCard">
+    <div id="shopTitle">Thẻm tập Yoga cao cấp TP</div>
+    <div id="shopPrice">125.000&#8363;</div>
+    <div id="shopStore">Cửa hàng trình liên kết Shopee</div>
+  </div>
+</ytd-engagement-panel-section-list-renderer>
+
+<!-- Dải sản phẩm dưới video -->
+<ytd-product-list-renderer id="prodList" style="display:block">Sản phẩm</ytd-product-list-renderer>
+<ytd-merch-shelf-renderer id="merchShelf" style="display:block">Merch</ytd-merch-shelf-renderer>
+<ytd-reel-shopping-shelf-renderer id="reelShop" style="display:block">Shop Shorts</ytd-reel-shopping-shelf-renderer>
+
+<!-- Sticker sản phẩm dán đè lên video (Shorts) -->
+<div id="stickerLayer">
+  <yt-product-sticker-view-model id="stickerVM" style="display:block">Mua ngay</yt-product-sticker-view-model>
+  <div class="ytOverlayProductStickerHost" id="stickerHost" style="display:block">Shopee</div>
+</div>
+
+<!-- Nút "Mua sắm" / "Sản phẩm" đè trên player -->
+<div class="ytp-featured-product" id="featured" style="display:block">Sản phẩm nổi bật</div>
+<div class="ytp-suggested-action" id="suggested" style="display:block">Mua sắm</div>
+
+<!-- Khu vực không được đụng tới -->
+<div id="videoMeta" style="display:block">Tiêu đề video · 1.2N lượt xem</div>
+<ytd-watch-metadata id="meta" style="display:block">Tiêu đề video</ytd-watch-metadata>
+<ytd-engagement-panel-section-list-renderer id="pComments" target-id="engagement-panel-comments-section" style="display:block">Bình luận</ytd-engagement-panel-section-list-renderer>
+
+<pre id="out">RUNNING</pre>
+<script>
+// ---- Mock chrome API (content.js cần chrome.storage / chrome.runtime) ----
+// onChanged được nối thật để test được nhánh "settings thay đổi" của content.js.
+const _store = {};
+const _listeners = [];
+const _read = (keys) => {
+    const out = {};
+    const list = Array.isArray(keys) ? keys : (typeof keys === "string" ? [keys] : Object.keys(_store));
+    for (const k of list) if (k in _store) out[k] = _store[k];
+    return out;
+};
+function _fireChanges(changes) {
+    for (const fn of _listeners) {
+        try { fn(changes, "local"); } catch { /* ignore */ }
+    }
+}
+window.chrome = {
+    storage: {
+        local: {
+            get: (keys, cb) => {
+                const out = _read(keys);
+                if (typeof cb === "function") { setTimeout(() => cb(out), 0); return; }
+                return Promise.resolve(out);
+            },
+            set: (obj, cb) => {
+                const changes = {};
+                for (const k of Object.keys(obj)) {
+                    changes[k] = { oldValue: _store[k], newValue: obj[k] };
+                    _store[k] = obj[k];
+                }
+                setTimeout(() => _fireChanges(changes), 0);
+                if (typeof cb === "function") { cb(); return; }
+                return Promise.resolve();
+            },
+        },
+        session: {
+            get: (k, cb) => (typeof cb === "function" ? (setTimeout(() => cb({}), 0), undefined) : Promise.resolve({})),
+            set: (o, cb) => { if (typeof cb === "function") cb(); else return Promise.resolve(); },
+        },
+        onChanged: { addListener: (fn) => { _listeners.push(fn); } },
+    },
+    runtime: {
+        id: "test",
+        getManifest: () => ({ version: "2.4.10" }),
+        sendMessage: (m, cb) => { if (cb) cb({}); },
+        lastError: null,
+        onMessage: { addListener: () => {} },
+    },
+};
+_store.enabled = true;
+_store.settings = { blockOverlay: true, blockBanner: true, blockAntiAdblock: true, blockShopping: true };
+_store.licenseKey = "TESTKEY123456";
+_store.licenseToken = "tok";
+_store.licenseSig = "sig";
+
+const results = [];
+window.__FG_RESULTS__ = results;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+window.addEventListener("error", (e) => { results.push("FAIL runtime error: " + e.message + " @" + e.lineno); document.getElementById("out").textContent = results.join("\n"); });
+function check(name, cond, extra) { results.push((cond ? "PASS " : "FAIL ") + name + (extra ? "  [" + extra + "]" : "")); }
+const d = (id) => getComputedStyle(document.getElementById(id)).display;
+</script>
+<script>
+// KHÔNG nạp /license.js: file đó khai báo `const FunnyLicense` (lexical binding) sẽ che mờ
+// mọi gán vào window.FunnyLicense. Ở đây chỉ cần license hợp lệ để content.js chạy đầy đủ.
+window.FunnyLicense = {
+    verifyStored: async () => ({ ok: true, exp: "2099-12-31" }),
+    load: async () => ({ ok: true, key: "TESTKEY123456", expires: "2099-12-31", label: "", hasToken: true }),
+    recheck: async () => ({ ok: true }),
+    activate: async () => ({ ok: true }),
+    clear: async () => {},
+    isStillValid: () => true,
+    formatExpiry: () => "Không giới hạn",
+    normalizeKey: (k) => String(k || "").toUpperCase().replace(/[^A-Z0-9]/g, ""),
+};
+</script>
+<script src="/content.js"></script>
+<script>
+(async () => {
+ try {
+    await sleep(1200);
+
+    // --- 1. Class trên <html> được bật ---
+    const html = document.documentElement;
+    check("S0 class 'fg-no-shopping' bat tren <html>", html.classList.contains("fg-no-shopping"), `cls="${html.className}"`);
+
+    // --- 2. CSS: mọi thành phần quảng cáo mua sắm đều bị ẩn ---
+    // Lưu ý: khi CHA bị display:none thì computed display của CON vẫn là "block"
+    // (đặc tính bình thường của CSS) → phải kiểm tra khả năng HIỂN THỊ thực sự.
+    const visible = (id) => {
+        const el = document.getElementById(id);
+        if (!el) return false;
+        if (getComputedStyle(el).display === "none") return false;
+        // Nếu bất kỳ tổ tiên nào bị display:none → phần tử không hiển thị
+        for (let p = el; p; p = p.parentElement) {
+            if (getComputedStyle(p).display === "none") return false;
+        }
+        return el.getClientRects().length > 0;
+    };
+    check("S1 an panel 'San pham' ben canh video", d("shopPanel") === "none", "display=" + d("shopPanel"));
+    check("S2 the san pham co gia bi an hoan toan", !visible("shopCard"), "visible=" + visible("shopCard"));
+    check("S3 an danh sach san pham duoi video", d("prodList") === "none" && d("merchShelf") === "none" && d("reelShop") === "none");
+    check("S4 an sticker san pham tren video", d("stickerVM") === "none" && d("stickerHost") === "none");
+    check("S5 an nut 'Mua sam' / san pham noi bat", d("featured") === "none" && d("suggested") === "none");
+
+    // --- 3. KHÔNG đụng tới nội dung thật ---
+    check("S6 KHONG an tieu de video", d("meta") !== "none" && d("videoMeta") !== "none");
+    check("S7 KHONG an binh luan", d("pComments") !== "none");
+
+    // --- 4. JS: phần tử render MUỘN cũng bị ẩn + được đếm vào mục "Mua sắm" ---
+    const late = document.createElement("ytd-product-list-renderer");
+    late.id = "lateProd";
+    late.style.cssText = "display:block";
+    document.body.appendChild(late);
+    await sleep(900);
+    check("S8 san pham render muon van bi an", d("lateProd") === "none", "display=" + d("lateProd"));
+
+    // Đếm số quảng cáo mua sắm đã chặn (category "shopping")
+    await sleep(1800);
+    const breakdown = _store.statsBreakdown || {};
+    check("S9 dem so quang cao mua sam vao thong ke", (breakdown.shopping || 0) > 0, "shopping=" + breakdown.shopping);
+
+    // --- 5. Tắt setting → class phải được gỡ, phần tử hiện lại ---
+    await chrome.storage.local.set({ settings: { blockOverlay: true, blockBanner: true, blockAntiAdblock: true, blockShopping: false } });
+    await sleep(600);
+    check("S10 tat setting -> go class 'fg-no-shopping'", !html.classList.contains("fg-no-shopping"), `cls="${html.className}"`);
+    check("S11 tat setting -> san pham hien lai", visible("shopPanel") && visible("shopCard"), `panel=${visible("shopPanel")} card=${visible("shopCard")}`);
+
+    // --- 6. Bật lại → ẩn lại ---
+    await chrome.storage.local.set({ settings: { blockOverlay: true, blockBanner: true, blockAntiAdblock: true, blockShopping: true } });
+    await sleep(600);
+    check("S12 bat lai setting -> an san pham", html.classList.contains("fg-no-shopping") && d("shopPanel") === "none", `cls="${html.className}" display=${d("shopPanel")}`);
+
+    document.getElementById("out").textContent = results.join("\n");
+ } catch (e) {
+    results.push("FAIL exception: " + (e && e.stack || e));
+    document.getElementById("out").textContent = results.join("\n");
+ }
+})();
+</script>
+</body></html>

@@ -18,6 +18,8 @@ Extension chỉ lưu trên thiết bị của bạn qua `chrome.storage`:
 
 Dữ liệu **không rời khỏi trình duyệt** trừ khi bạn chủ động xuất file JSON từ trang Cài đặt.
 
+Ngoài ra, extension lưu 1 mục nhỏ trong `localStorage` trên đúng domain YouTube (`__fg_state_v1`): cờ kích hoạt, danh sách whitelist và cờ cài đặt. Mục đích duy nhất là để lớp chặn quảng cáo tầng mạng biết trạng thái ngay khi trang vừa mở. Mục này **không chứa dữ liệu nhạy cảm** và không được gửi đi đâu. Mục này tự động bị xoá sau **6 giờ** kể từ lần ghi gần nhất.
+
 ## Quyền extension sử dụng
 
 | Quyền | Mục đích |

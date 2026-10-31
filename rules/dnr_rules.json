@@ -186,5 +186,125 @@
       "initiatorDomains": ["open.spotify.com", "play.spotify.com"],
       "resourceTypes": ["script", "xmlhttprequest", "image", "sub_frame"]
     }
+  },
+  {
+    "id": 30,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||googleads.g.doubleclick.net",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image", "ping"]
+    }
+  },
+  {
+    "id": 31,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||pagead2.googlesyndication.com",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image"]
+    }
+  },
+  {
+    "id": 32,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||www.googleadservices.com",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image"]
+    }
+  },
+  {
+    "id": 33,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||securepubads.g.doubleclick.net",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image", "ping"]
+    }
+  },
+  {
+    "id": 34,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||tpc.googlesyndication.com",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image", "sub_frame"]
+    }
+  },
+  {
+    "id": 35,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||static.doubleclick.net",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "sub_frame", "image"]
+    }
+  },
+  {
+    "id": 36,
+    "priority": 3,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||youtube.com/pagead/",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["xmlhttprequest", "image", "ping", "other"]
+    }
+  },
+  {
+    "id": 37,
+    "priority": 3,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||youtube.com/api/stats/ads",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["xmlhttprequest", "ping", "other"]
+    }
+  },
+  {
+    "id": 38,
+    "priority": 3,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||youtube.com/ptracking",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["xmlhttprequest", "ping", "other"]
+    }
+  },
+  {
+    "id": 39,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||youtube.com/api/stats/shopping",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["xmlhttprequest", "ping", "other"]
+    }
+  },
+  {
+    "id": 40,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||youtube.com/pagead/shopping",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["xmlhttprequest", "image", "ping", "other"]
+    }
+  },
+  {
+    "id": 41,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||youtube.com/ptracking/shopping",
+      "initiatorDomains": ["www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube.com"],
+      "resourceTypes": ["xmlhttprequest", "ping", "other"]
+    }
   }
 ]

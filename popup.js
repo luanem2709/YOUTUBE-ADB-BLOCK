@@ -3,8 +3,10 @@ const DEFAULT_SETTINGS = {
     blockBanner: true,
     blockOverlay: true,
     blockAntiAdblock: true,
+    blockShopping: true,
     muteAds: true,
     fastSkip: true,
+    blockManifest: true,
     blockSpotify: true,
     backgroundPlay: true,
     pipButton: true,
@@ -32,6 +34,7 @@ const statVideo = $("statVideo");
 const statBanner = $("statBanner");
 const statOverlay = $("statOverlay");
 const statAnti = $("statAnti");
+const statShopping = $("statShopping");
 const statSpotify = $("statSpotify");
 const refreshTabBtn = $("refreshTabBtn");
 const openYoutubeBtn = $("openYoutubeBtn");
@@ -49,8 +52,10 @@ const settingInputs = {
     blockBanner: $("blockBanner"),
     blockOverlay: $("blockOverlay"),
     blockAntiAdblock: $("blockAntiAdblock"),
+    blockShopping: $("blockShopping"),
     muteAds: $("muteAds"),
     fastSkip: $("fastSkip"),
+    blockManifest: $("blockManifest"),
     blockSpotify: $("blockSpotify"),
     backgroundPlay: $("backgroundPlay"),
     pipButton: $("pipButton"),
@@ -74,6 +79,16 @@ function todayKey() {
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
+}
+
+// Hàng đợi ghi chrome.storage.local — tránh race condition đọc→sửa→ghi trên cùng key
+// (userStats) khi nhiều nhánh code cùng cập nhật chạy song song.
+let storageWriteChain = Promise.resolve();
+function enqueueStorageWrite(task) {
+    storageWriteChain = storageWriteChain
+        .then(() => task())
+        .catch(() => { /* lỗi storage không được làm hỏng chuỗi */ });
+    return storageWriteChain;
 }
 
 function getTodayCount(statsHistory, fallbackTotal) {
@@ -152,11 +167,12 @@ function updateProgress(todayBlocked) {
 }
 
 function updateBreakdown(breakdown) {
-    const b = breakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 };
+    const b = breakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0, shopping: 0, spotify: 0 };
     statVideo.textContent = formatNumber(b.video || 0);
     statBanner.textContent = formatNumber(b.banner || 0);
     statOverlay.textContent = formatNumber(b.overlay || 0);
     statAnti.textContent = formatNumber(b.antiAdblock || 0);
+    if (statShopping) statShopping.textContent = formatNumber(b.shopping || 0);
     if (statSpotify) statSpotify.textContent = formatNumber(b.spotify || 0);
 }
 
@@ -306,7 +322,9 @@ function initPopup() {
 }
 
 function touchCurrentUser() {
-    chrome.storage.local.get(["userStats"], (result) => {
+    // Serialize với confirmResetBtn: cả hai đều đọc→sửa→ghi userStats.
+    enqueueStorageWrite(async () => {
+        const result = await chrome.storage.local.get(["userStats"]);
         const userStats = result.userStats;
         if (!userStats?.users) return;
         const id = userStats.currentId;
@@ -316,10 +334,9 @@ function touchCurrentUser() {
         const today = todayKey();
         if (!Array.isArray(user.days)) user.days = [];
         if (!user.days.includes(today)) user.days.push(today);
-        chrome.storage.local.set({ userStats });
+        await chrome.storage.local.set({ userStats });
     });
 }
-
 function updateTimeSaved(blockedCount) {
     timeSavedCount.textContent = formatTimeSaved(blockedCount);
 }
@@ -430,27 +447,27 @@ resetStatsBtn.addEventListener("click", () => resetModal.classList.add("show"));
 cancelResetBtn.addEventListener("click", () => resetModal.classList.remove("show"));
 
 confirmResetBtn.addEventListener("click", () => {
-    chrome.storage.local.get(["userStats"], (res) => {
+    enqueueStorageWrite(async () => {
+        const res = await chrome.storage.local.get(["userStats"]);
         const userStats = res.userStats || { currentId: "guest", users: {} };
         Object.values(userStats.users || {}).forEach((user) => {
             user.adsBlocked = 0;
             user.days = [];
         });
-        chrome.storage.local.set({
+        await chrome.storage.local.set({
             adsBlocked: 0,
             statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 },
             statsHistory: [],
             userStats,
-        }, () => {
-            if (chrome.storage.session) chrome.storage.session.set({ sessionAds: 0 });
-            adsBlockedCount.textContent = "0";
-            sessionCount.textContent = "0";
-            timeSavedCount.textContent = "0 giây";
-            updateProgress(0);
-            updateBreakdown({});
-            resetModal.classList.remove("show");
-            showToast("Đã đặt lại thống kê");
         });
+        if (chrome.storage.session) chrome.storage.session.set({ sessionAds: 0 });
+        adsBlockedCount.textContent = "0";
+        sessionCount.textContent = "0";
+        timeSavedCount.textContent = "0 giây";
+        updateProgress(0);
+        updateBreakdown({});
+        resetModal.classList.remove("show");
+        showToast("Đã đặt lại thống kê");
     });
 });
 

@@ -3,28 +3,69 @@
 // - Test Node: license.test.js
 const http = require("http");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { execFileSync, spawn } = require("child_process");
 
 // Chạy Chrome bất đồng bộ — spawnSync sẽ chặn luôn server HTTP trong cùng tiến trình
+// Mỗi lần chạy dùng profile riêng trong thư mục tạm + dọn sạch khi kết thúc,
+// nếu không các process Chrome con sẽ sót lại và ngốn hàng trăm MB RAM.
 function runChrome(chrome, args, timeoutMs) {
     return new Promise((resolve) => {
-        const p = spawn(chrome, args);
+        const profile = fs.mkdtempSync(path.join(os.tmpdir(), "fgrun-"));
+        const p = spawn(chrome, [...args, "--user-data-dir=" + profile]);
         let out = "";
         p.stdout.on("data", (d) => { out += d; });
         p.stderr.on("data", () => {});
         const timer = setTimeout(() => p.kill(), timeoutMs);
-        p.on("close", () => { clearTimeout(timer); resolve(out); });
-        p.on("error", () => { clearTimeout(timer); resolve(out); });
+        const cleanup = () => {
+            clearTimeout(timer);
+            try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ }
+        };
+        p.on("close", () => { cleanup(); resolve(out); });
+        p.on("error", () => { cleanup(); resolve(out); });
     });
 }
 
 const root = path.join(__dirname, "..");
 const PORT = 8765 + Math.floor(Math.random() * 1000);
 
+// Dọn các process Chrome headless còn sót lại từ lần chạy test trước.
+// Chrome headless để lại process con (renderer/gpu) có thể ngốn vài trăm MB RAM.
+// CHỈ dọn process headless, KHÔNG đụng vào Chrome thật của người dùng.
+function cleanupLeftoverChrome() {
+    try {
+        const ps = `
+$cut=(Get-Date).AddMinutes(-20);
+$ids=@();
+foreach($x in (Get-Process chrome -EA SilentlyContinue)){
+  try{
+    if($x.StartTime -gt $cut){
+      $c=(Get-CimInstance Win32_Process -Filter "ProcessId=$($x.Id)").CommandLine
+      if($c -match "--headless" -or $c -match "dump-dom"){ $ids+=$x.Id }
+    }
+  }catch{}
+}
+if($ids.Count){ $ids | ForEach-Object { Stop-Process -Id $_ -Force -EA SilentlyContinue } }
+$ids.Count
+`;
+        const n = Number(execFileSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8" }).trim() || 0);
+        if (n > 0) console.log(`(da don ${n} process Chrome headless con sot lai)`);
+    } catch { /* ignore */ }
+    try {
+        for (const d of fs.readdirSync(os.tmpdir())) {
+            if (/^(fgrun|fgsmoke|HeadlessChrome)/.test(d)) {
+                try { fs.rmSync(path.join(os.tmpdir(), d), { recursive: true, force: true }); } catch { /* ignore */ }
+            }
+        }
+    } catch { /* ignore */ }
+}
+
 // Trang nào cần chạy trên đường dẫn /watch (giống YouTube)
 const BROWSER_TESTS = [
     { file: "main.html", url: "/tests/main.html" },
+    { file: "net.html", url: "/tests/net.html" },
+    { file: "netfast.html", url: "/tests/netfast.html" },
     { file: "spotify.html", url: "/tests/spotify.html" },
     { file: "pause.html", url: "/watch?v=abc&t=pause.html" },
     { file: "premium.html", url: "/watch?v=abc&t=premium.html" },
@@ -32,6 +73,11 @@ const BROWSER_TESTS = [
     { file: "ambient.html", url: "/watch?v=abc&t=ambient.html" },
     { file: "logo.html", url: "/tests/logo.html" },
     { file: "banner.html", url: "/tests/banner.html" },
+    { file: "shopping.html", url: "/tests/shopping.html" },
+    { file: "css.html", url: "/tests/css.html" },
+    { file: "popup.html", url: "/tests/popup.test.html" },
+    { file: "stats.html", url: "/tests/stats.test.html" },
+    { file: "options.html", url: "/tests/options.test.html" },
 ];
 
 function findChrome() {
@@ -75,6 +121,17 @@ function parse(dom) {
 server.listen(PORT, async () => {
     let failed = 0, passed = 0;
     const chrome = findChrome();
+
+    // Sinh trang test popup/stats/options tu HTML goc (them mock + script kiem tra)
+    for (const gen of ["mkpopup.js", "mkpages.js"]) {
+        try {
+            execFileSync(process.execPath, [path.join(__dirname, gen)], { encoding: "utf8" });
+        } catch (e) {
+            console.log("FAIL khong sinh duoc trang test tu " + gen + ": " + (e.message || e));
+            failed++;
+        }
+    }
+
     if (!chrome) {
         console.log("FAIL khong tim thay Chrome (dat bien CHROME_PATH)");
         failed++;
@@ -96,7 +153,7 @@ server.listen(PORT, async () => {
     }
     server.close();
 
-    for (const nodeTest of ["license.test.js", "server.test.js"]) {
+    for (const nodeTest of ["license.test.js", "server.test.js", "rules.test.js", "storage.test.js"]) {
         console.log("\n== " + nodeTest);
         try {
             const out = execFileSync(process.execPath, [path.join(__dirname, nodeTest)], { encoding: "utf8" });
@@ -116,5 +173,6 @@ server.listen(PORT, async () => {
     }
 
     console.log(`\nTong: ${passed} PASS, ${failed} FAIL`);
+    cleanupLeftoverChrome();
     process.exit(failed ? 1 : 0);
 });

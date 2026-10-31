@@ -11,6 +11,7 @@ const statVideo = $("statVideo");
 const statBanner = $("statBanner");
 const statOverlay = $("statOverlay");
 const statAnti = $("statAnti");
+const statShopping = $("statShopping");
 const statSpotify = $("statSpotify");
 const podiumEl = $("podium");
 const rankBoard = $("rankBoard");
@@ -37,6 +38,16 @@ function todayKey() {
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
+}
+
+// Hàng đợi ghi chrome.storage.local — tránh race condition đọc→sửa→ghi trên cùng key
+// (userStats) giữa patchCurrentUser() và confirmResetBtn.
+let storageWriteChain = Promise.resolve();
+function enqueueStorageWrite(task) {
+    storageWriteChain = storageWriteChain
+        .then(() => task())
+        .catch(() => { /* lỗi storage không được làm hỏng chuỗi */ });
+    return storageWriteChain;
 }
 
 function getTodayCount(statsHistory, fallbackTotal) {
@@ -179,7 +190,8 @@ function patchCurrentUser(patch, successMsg) {
         return;
     }
 
-    chrome.storage.local.get(["userStats"], (result) => {
+    enqueueStorageWrite(async () => {
+        const result = await chrome.storage.local.get(["userStats"]);
         const userStats = result.userStats || { currentId: "guest", users: {} };
         const id = userStats.currentId || currentId || "guest";
         if (!userStats.users[id]) {
@@ -196,10 +208,9 @@ function patchCurrentUser(patch, successMsg) {
         }
         Object.assign(userStats.users[id], patch);
         userStats.currentId = id;
-        chrome.storage.local.set({ userStats }, () => {
-            showToast(successMsg);
-            loadStats();
-        });
+        await chrome.storage.local.set({ userStats });
+        showToast(successMsg);
+        loadStats();
     });
 }
 
@@ -213,7 +224,7 @@ function makeAvatarNode(className, user) {
 function renderPersonal(result) {
     const blocked = result.adsBlocked || 0;
     const todayBlocked = getTodayCount(result.statsHistory, blocked);
-    const breakdown = result.statsBreakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 };
+    const breakdown = result.statsBreakdown || { video: 0, banner: 0, overlay: 0, antiAdblock: 0, shopping: 0, spotify: 0 };
     dailyGoal = result.dailyGoal || 50;
     adsBlockedCount.textContent = formatNumber(blocked);
     sessionCount.textContent = formatNumber(result.sessionAds || 0);
@@ -224,6 +235,7 @@ function renderPersonal(result) {
     statBanner.textContent = formatNumber(breakdown.banner || 0);
     statOverlay.textContent = formatNumber(breakdown.overlay || 0);
     statAnti.textContent = formatNumber(breakdown.antiAdblock || 0);
+    if (statShopping) statShopping.textContent = formatNumber(breakdown.shopping || 0);
     if (statSpotify) statSpotify.textContent = formatNumber(breakdown.spotify || 0);
 }
 
@@ -299,10 +311,14 @@ function renderBoard(list) {
                 <div class="score-sub">${formatTimeSaved(user.adsBlocked)}</div>
             </div>
             <div class="gap-block">
-                <div class="gap-text">${rank === 1 ? "Đang giữ ngôi đầu" : `Còn ${formatNumber(gap)} để vượt ${above?.name || "hạng trên"}`}</div>
+                <div class="gap-text"></div>
                 <div class="gap-bar"><div class="gap-fill" style="width:${Math.max(8, ((user.adsBlocked || 0) / topScore) * 100)}%"></div></div>
             </div>
         `;
+        // Tên người dùng là dữ liệu TỰ DO (người dùng tự đặt) → KHÔNG được chèn vào innerHTML,
+        // nếu không sẽ bị XSS trong trang extension (đọc được chrome.storage chứa token key).
+        row.querySelector(".gap-text").textContent =
+            rank === 1 ? "Đang giữ ngôi đầu" : `Còn ${formatNumber(gap)} để vượt ${above?.name || "hạng trên"}`;
         row.children[1].replaceWith(userBox);
         rankBoard.appendChild(row);
     });
@@ -416,23 +432,23 @@ confirmResetBtn.addEventListener("click", () => {
         resetModal.classList.remove("show");
         return;
     }
-    chrome.storage.local.get(["userStats"], (result) => {
+    enqueueStorageWrite(async () => {
+        const result = await chrome.storage.local.get(["userStats"]);
         const userStats = result.userStats || { currentId: "guest", users: {} };
         Object.values(userStats.users || {}).forEach((user) => {
             user.adsBlocked = 0;
             user.days = [];
         });
-        chrome.storage.local.set({
+        await chrome.storage.local.set({
             adsBlocked: 0,
             statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 },
             statsHistory: [],
             userStats,
-        }, () => {
-            if (chrome.storage.session) chrome.storage.session.set({ sessionAds: 0 });
-            resetModal.classList.remove("show");
-            showToast("Đã đặt lại thống kê");
-            loadStats();
         });
+        if (chrome.storage.session) chrome.storage.session.set({ sessionAds: 0 });
+        resetModal.classList.remove("show");
+        showToast("Đã đặt lại thống kê");
+        loadStats();
     });
 });
 

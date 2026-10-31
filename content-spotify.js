@@ -74,6 +74,8 @@
     let mutedByUs = false;
     let ratedByUs = false;
     let tabMutedByUs = false;
+    // Tốc độ phát GỐC của từng phần tử media (người dùng có thể đang xem ở 1.5x…)
+    const savedRates = new WeakMap();
     let lastSkipAt = 0;
     let skippedForwardThisAd = false;
     let adActive = false;
@@ -169,11 +171,12 @@
     }
 
     function widgetLooksLikeAd(widget) {
-        const label = (widget.getAttribute("aria-label") || "").toLowerCase();
+        const label = (widget.getAttribute("aria-label") || "").trim().toLowerCase();
         const text = (widget.textContent || "").toLowerCase();
-        const blob = label + " " + text;
-        if (AD_LABELS.some((k) => blob.includes(k))) return true;
-        if (AD_BREAK_PHRASES.some((k) => blob.includes(k))) return true;
+        // aria-label của widget là nhãn giao diện ("Đang phát" / "Now playing") → so khớp chính xác.
+        if (label && AD_LABELS.some((k) => label === k)) return true;
+        // Cụm chữ màn QC rất đặc thù → dùng "includes" ở đây là an toàn.
+        if (AD_BREAK_PHRASES.some((k) => text.includes(k))) return true;
 
         const trackLink = widget.querySelector(
             'a[href*="/track/"], a[href*="/album/"], a[href*="/playlist/"], a[href*="/artist/"], a[href*="/episode/"], [data-testid="context-item-link"]'
@@ -212,8 +215,16 @@
         try {
             const meta = navigator.mediaSession && navigator.mediaSession.metadata;
             if (!meta) return false;
-            const blob = `${meta.title || ""} ${meta.artist || ""} ${meta.album || ""}`.toLowerCase();
-            return AD_LABELS.some((k) => blob.includes(k));
+            // So khớp CHÍNH XÁC từng trường (tiêu đề / nghệ sĩ / album).
+            // Dùng "includes" sẽ báo nhầm bài hát bình thường có tên chứa "advertisement"
+            // hoặc tên nghệ sĩ chứa "quảng cáo" → bị tua/mute nhầm bài nhạc thật.
+            const fields = [meta.title, meta.artist, meta.album];
+            for (const raw of fields) {
+                const v = String(raw || "").trim().toLowerCase();
+                if (!v) continue;
+                if (AD_LABELS.some((k) => v === k)) return true;
+            }
+            return false;
         } catch {
             return false;
         }
@@ -229,8 +240,10 @@
 
         if (pageHasAdBreak()) return true;
 
-        const title = (document.title || "").toLowerCase();
-        if (AD_LABELS.some((k) => title.includes(k))) return true;
+        const title = (document.title || "").trim().toLowerCase();
+        // Chỉ coi là QC khi tiêu đề trang BẰNG ĐÚNG nhãn QC (không dùng "includes" —
+        // bài hát tên "Advertisement" sẽ bị nhận nhầm là quảng cáo).
+        if (AD_LABELS.some((k) => title === k)) return true;
 
         const link = (widget || document).querySelector('a[data-testid="context-item-link"]');
         if (link) {
@@ -278,7 +291,13 @@
         for (let i = 0; i < media.length; i++) {
             const m = media[i];
             if (!m.muted) { m.muted = true; mutedByUs = true; }
-            if (m.playbackRate !== 16) { m.playbackRate = 16; ratedByUs = true; }
+            if (m.playbackRate !== 16) {
+                // Nhớ tốc độ GỐC của người dùng để khôi phục đúng sau QC
+                // (trước đây luôn trả về 1 → người nghe ở 1.5x bị đổi về 1x).
+                savedRates.set(m, m.playbackRate);
+                m.playbackRate = 16;
+                ratedByUs = true;
+            }
             try {
                 if (isFinite(m.duration) && m.duration > 0 && m.currentTime < m.duration - 0.2) {
                     m.currentTime = m.duration;
@@ -295,8 +314,12 @@
         const media = mediaElements();
         for (let i = 0; i < media.length; i++) {
             const m = media[i];
-            if (ratedByUs && m.playbackRate === 16) m.playbackRate = 1;
+            if (ratedByUs && m.playbackRate === 16) {
+                const saved = savedRates.get(m);
+                m.playbackRate = (typeof saved === "number" && isFinite(saved) && saved > 0 && saved <= 16) ? saved : 1;
+            }
             if (mutedByUs && m.muted) m.muted = false;
+            savedRates.delete(m);
         }
         mutedByUs = false;
         ratedByUs = false;

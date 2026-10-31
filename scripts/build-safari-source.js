@@ -19,6 +19,7 @@ const include = [
     "license.js",
     "content.js",
     "content-main.js",
+    "content-yt-net.js",
     "content.css",
     "content-spotify.js",
     "content-spotify-main.js",

@@ -80,6 +80,7 @@
                         <div class="breakdown-item"><span>Banner</span><strong id="statBanner">0</strong></div>
                         <div class="breakdown-item"><span>Overlay</span><strong id="statOverlay">0</strong></div>
                         <div class="breakdown-item"><span>Anti-adblock</span><strong id="statAnti">0</strong></div>
+                        <div class="breakdown-item"><span>Mua sắm</span><strong id="statShopping">0</strong></div>
                         <div class="breakdown-item"><span>Spotify</span><strong id="statSpotify">0</strong></div>
                     </div>
                 </div>
@@ -177,6 +178,36 @@
                                 <span class="toggle-track"></span>
                             </label>
                         </div>
+                        <div class="setting-tile">
+                            <div class="setting-left">
+                                <div class="setting-icon">
+                                    <svg viewBox="0 0 24 24"><path d="M7 18c0-1.1.9-2 2-2h6c1.1 0 2 .9 2 2v2H7v-2zM12 2C9.24 2 7 4.24 7 7c0 2.05 1.23 3.81 3 4.58V14H9a3 3 0 0 0-3 3v2h12v-2a3 3 0 0 0-3-3h-1v-2.42c1.77-.77 3-2.53 3-4.58 0-2.76-2.24-5-5-5zm0 8c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/></svg>
+                                </div>
+                                <div class="setting-text">
+                                    <h3>Quảng cáo mua sắm</h3>
+                                    <p>Ẩn thẻ sản phẩm có giá, bảng "Sản phẩm" &amp; sticker Shopee</p>
+                                </div>
+                            </div>
+                            <label class="toggle sm">
+                                <input type="checkbox" id="blockShopping" checked />
+                                <span class="toggle-track"></span>
+                            </label>
+                        </div>
+                        <div class="setting-tile">
+                            <div class="setting-left">
+                                <div class="setting-icon">
+                                    <svg viewBox="0 0 24 24"><path d="M7 18c0-1.1.9-2 2-2h6c1.1 0 2 .9 2 2v2H7v-2zM12 2C9.24 2 7 4.24 7 7c0 2.05 1.23 3.81 3 4.58V14H9a3 3 0 0 0-3 3v2h12v-2a3 3 0 0 0-3-3h-1v-2.42c1.77-.77 3-2.53 3-4.58 0-2.76-2.24-5-5-5zm0 8c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/></svg>
+                                </div>
+                                <div class="setting-text">
+                                    <h3>Quảng cáo mua sắm</h3>
+                                    <p>Ẩn thẻ sản phẩm có giá, bảng "Sản phẩm" &amp; sticker Shopee</p>
+                                </div>
+                            </div>
+                            <label class="toggle sm">
+                                <input type="checkbox" id="blockShopping" checked />
+                                <span class="toggle-track"></span>
+                            </label>
+                        </div>
                     </div>
                 </div>
 
@@ -195,6 +226,21 @@
                             </div>
                             <label class="toggle sm">
                                 <input type="checkbox" id="muteAds" checked />
+                                <span class="toggle-track"></span>
+                            </label>
+                        </div>
+                        <div class="setting-tile">
+                            <div class="setting-left">
+                                <div class="setting-icon">
+                                    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-11h2v6h-2v-6zm0-4h2v2h-2V5z"/></svg>
+                                </div>
+                                <div class="setting-text">
+                                    <h3>Bỏ qua hẳn quảng cáo</h3>
+                                    <p>Gỡ quảng cáo ngay trong dữ liệu YouTube — không tải, không đen màn hình</p>
+                                </div>
+                            </div>
+                            <label class="toggle sm">
+                                <input type="checkbox" id="blockManifest" checked />
                                 <span class="toggle-track"></span>
                             </label>
                         </div>
@@ -373,6 +419,10 @@
             <section class="tab-panel" id="panel-about" role="tabpanel">
                 <div class="card">
                     <div class="card-title">Tính năng đang hoạt động</div>
+                            Ẩn quảng cáo mua sắm (thẻ sản phẩm, bảng "Sản phẩm", sticker Shopee)
+                        </li>
+                        <li class="feature-item">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                     <ul class="feature-list">
                         <li class="feature-item">
                             <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>

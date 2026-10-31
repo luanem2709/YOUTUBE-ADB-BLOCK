@@ -8,11 +8,19 @@
  * Thêm key: menu FUNNYGAME > Thêm key (1 / 3 / 6 / 12 tháng)
  * Form tự tạo key; chọn gói tháng + ghi chú, rồi copy key đưa khách.
  * Quá ngày Expires (timezone Việt Nam) thì key hết hạn.
+ *
+ * CHỮ KÝ SỐ (bắt buộc từ extension v2.4.0):
+ *   Project Settings > Script Properties > Add property
+ *     Tên:     LICENSE_PRIVATE_KEY
+ *     Giá trị: toàn bộ nội dung file build/license-private.pem (cả dòng BEGIN/END)
+ *   KHÔNG dán khóa riêng vào code, KHÔNG commit lên GitHub.
+ *   Kiểm tra: chọn hàm testSign > Run.
  */
 
 var SHEET_GID = 1159168714;
 var SPREADSHEET_ID = "1ITw6jYqtuIwDaXvx_GLPl4CUMCNDC7C-pTwJVmNXC8E";
 var TZ = "Asia/Ho_Chi_Minh";
+var NO_EXPIRY_ISO = "9999-12-31"; // key không có ngày hết hạn
 
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -27,9 +35,6 @@ function onOpen() {
 
 function doGet(e) {
   var p = (e && e.parameter) ? e.parameter : {};
-  if (String(p.action || "").toLowerCase() === "seed") {
-    return handle_(p);
-  }
   if (!p.key) {
     return json_({
       ok: false,
@@ -56,8 +61,10 @@ function handle_(p) {
   lock.waitLock(15000);
   try {
     var action = String(p.action || "activate").toLowerCase();
+    // BẢO MẬT: không cho tạo key mẫu qua web (ai có link cũng gọi được).
+    // Muốn tạo key mẫu: chạy hàm seedKeys() trong trình soạn thảo Apps Script.
     if (action === "seed") {
-      return seedKeys_();
+      return json_({ ok: false, message: "Không hỗ trợ." });
     }
 
     var key = normalizeKey_(p.key || "");
@@ -169,11 +176,17 @@ function handle_(p) {
       sheet.getRange(sheetRow, col.status + 1).setValue("Active");
     }
 
+    // Ký hạn dùng để extension kiểm tra offline — sửa storage không mở khóa được
+    var expIso = expires ? formatIso_(expires) : NO_EXPIRY_ISO;
+    var signed = signLicense_(key, expIso);
+
     return json_({
       ok: true,
       message: "OK",
       expires: expires ? formatDate_(expires) : "",
-      expiresIso: expires ? formatIso_(expires) : ""
+      expiresIso: expIso,
+      token: signed.token,
+      sig: signed.sig
     });
   } catch (err) {
     return json_({ ok: false, message: "Lỗi máy chủ key: " + err });
@@ -181,6 +194,45 @@ function handle_(p) {
     lock.releaseLock();
   }
 }
+
+// ======================= CHỮ KÝ SỐ =======================
+
+/**
+ * token = base64url(JSON {v, k, exp, iat});  sig = base64url(RSA-SHA256(token))
+ * k = 32 ký tự hex đầu của SHA-256(key đã chuẩn hoá) → token chỉ dùng được với đúng key đó.
+ */
+function signLicense_(key, expIso) {
+  var pem = PropertiesService.getScriptProperties().getProperty("LICENSE_PRIVATE_KEY");
+  if (!pem) throw new Error("Chưa cấu hình LICENSE_PRIVATE_KEY trong Script Properties");
+  pem = String(pem).replace(/\\n/g, "\n").trim();
+  var payload = JSON.stringify({
+    v: 1,
+    k: sha256Hex_(normalizeKey_(key)).substring(0, 32),
+    exp: expIso,
+    iat: Date.now()
+  });
+  var token = Utilities.base64EncodeWebSafe(Utilities.newBlob(payload).getBytes());
+  var sig = Utilities.base64EncodeWebSafe(Utilities.computeRsaSha256Signature(token, pem));
+  return { token: token, sig: sig };
+}
+
+function sha256Hex_(text) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8);
+  var out = "";
+  for (var i = 0; i < bytes.length; i++) {
+    var v = (bytes[i] < 0 ? bytes[i] + 256 : bytes[i]).toString(16);
+    out += v.length === 1 ? "0" + v : v;
+  }
+  return out;
+}
+
+/** Chạy trong editor để kiểm tra khóa riêng đã cấu hình đúng. */
+function testSign() {
+  var r = signLicense_("FG-TEST-0000-0000", "2099-12-31");
+  Logger.log("OK — server ký được. token=" + r.token.substring(0, 24) + "...  sig=" + r.sig.substring(0, 24) + "...");
+}
+
+// ======================= SHEET =======================
 
 function getLicenseSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -352,7 +404,7 @@ function seedKeys_() {
   return json_({ ok: true, message: "Đã ghi " + added + " key vào sheet.", added: added });
 }
 
-/** Chạy 1 lần trong editor: tự ghi 5 key vào sheet. */
+/** Chỉ chạy được trong editor (đã chặn qua web): tự ghi 5 key mẫu vào sheet. */
 function seedKeys() {
   var out = seedKeys_();
   Logger.log(out.getContent());
@@ -463,7 +515,10 @@ function formatIso_(date) {
 }
 
 function json_(obj) {
-  Logger.log(JSON.stringify(obj));
+  // Không ghi token/chữ ký vào log
+  var logObj = {};
+  for (var k in obj) logObj[k] = (k === "token" || k === "sig") ? "(ẩn)" : obj[k];
+  Logger.log(JSON.stringify(logObj));
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);

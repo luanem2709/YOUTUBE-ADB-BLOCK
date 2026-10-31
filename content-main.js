@@ -7,6 +7,9 @@
     window.__fgYtMain = true;
     const FG_TOKEN = "fg_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
+    const fgSkipStats = { fired: 0, throttled: 0, capped: 0 };
+    const fgHandleStats = { calls: 0, rateSet: 0, seekEnd: 0, seek5: 0 };
+
     // ---------- Selector ----------
     // Thành phần UI chỉ xuất hiện khi player đang phát quảng cáo
     const AD_SIGNAL_STR_BASE = [
@@ -53,12 +56,32 @@
         "button[class*='skip-ad']",
         "button[class*='ad-skip']",
         "[id^='skip-button'] button",
+        // YouTube 2025+: nút "Bỏ qua" có thể là <div> / <span> với class lạ, không nằm trong <button>
+        ".ytp-ad-skip-button-modern",
+        ".ytp-skip-ad-button-modern",
+        ".ytp-ad-skip-button-slot",
+        "[class*='skip-ad-button']",
+        "[class*='ad-skip-button']",
+        "[id^='skip-button']",
     ];
     let SKIP_STR = SKIP_STR_BASE.join(",");
 
     // Nút "Bỏ qua" kiểu mới (đổi tên class): tìm theo chữ, CHỈ trong vùng quảng cáo → không bấm nhầm nút khác
     const AD_ZONE_BUTTONS = ".video-ads button, .ytp-ad-module button, [class*='ytp-ad-'] button, [class*='ytp-ad-'] [role='button']";
     const SKIP_TEXT_RE = /^\s*(bỏ qua|bo qua|skip)(\s*(quảng cáo|quang cao|ads?|video))?\s*[›>▶▸⏭]?\s*$/i;
+    // Vùng chứa UI QC — dùng để tìm nút "Bỏ qua" theo CHỮ khi class lạ (YouTube đổi class liên tục).
+    // Chỉ quét trong các vùng này để KHÔNG bấm nhầm nút "Bỏ qua" của chapter (ngoài vùng QC).
+    const AD_ZONE_ROOTS = [
+        ".video-ads",
+        ".ytp-ad-module",
+        ".ytp-ad-player-overlay",
+        ".ytp-ad-player-overlay-layer",
+        ".ytp-ad-overlay-container",
+        ".ytp-ad-skip-button-slot",
+        ".ytp-ad-action-interstitial",
+        ".ytp-video-interstitial-buttoned-centered-layout",
+        ".ytp-ad-survey-player-overlay",
+    ].join(",");
 
     const ANTI_ADBLOCK_SELECTOR_STR_BASE = [
         "ytd-enforcement-message-view-model",
@@ -78,12 +101,14 @@
     try { allowLicense = sessionStorage.getItem("__fg_lic") === "1"; } catch { /* ignore */ }
 
     let fgSettings = {
-        blockVideo: true,
-        blockBanner: true,
-        blockOverlay: true,
-        blockAntiAdblock: true,
-        muteAds: true,
-        fastSkip: true,
+    blockVideo: true,
+    blockBanner: true,
+    blockOverlay: true,
+    blockAntiAdblock: true,
+    blockShopping: true,
+    muteAds: true,
+    fastSkip: true,
+    blockManifest: true,
         backgroundPlay: true,
         pipButton: true,
         videoQuality: "auto",
@@ -205,30 +230,196 @@
     }
 
     // ---------- Xác nhận QC (nghiêm ngặt) ----------
+    // LƯU Ý QUAN TRỌNG (báo cáo lỗi thật 2.4.12):
+    //   YouTube KHÔNG LUÔN gắn "ad-showing"/"ad-interrupting" khi đang phát QC.
+    //   Quan sát thực tế (báo cáo 2026-10-31, video j8U06veqxdU):
+    //     playerClass = "... ytp-transparent ... ad-created ytp-branding-shown
+    //                    playing-mode buffering-mode unstarted-mode"
+    //   → KHÔNG có "ad-showing"/"ad-interrupting" → hasAdClass() = false
+    //   → isConfirmedAd() = false → extension KHÔNG xử lý QC
+    //   → exitAd() reset video.style.opacity = "" → QC hiện ra cho người dùng.
+    //   Ngoài ra player.getAdState() KHÔNG tồn tại (ytAdState = -1) → không dùng được.
+    //   → Phải nhận biết QC qua: ad-created + ytp-branding-shown + UI QC thực tế.
+    const AD_CLASS = "ad-showing";
+    const AD_CLASS_2 = "ad-interrupting";
+    // YouTube tạo player QC → gắn "ad-created" (giữ nguyên cả sau khi QC kết thúc).
+    const AD_CREATED_CLASS = "ad-created";
+    // Hiện nhãn "Quảng cáo"/logo nhà quảng cáo → dấu hiệu QC đang phát.
+    const AD_BRANDING_CLASS = "ytp-branding-shown";
+
     function hasAdClass(player) {
-        return !!player && (player.classList.contains("ad-showing") || player.classList.contains("ad-interrupting"));
+        return !!player && (player.classList.contains(AD_CLASS) || player.classList.contains(AD_CLASS_2));
+    }
+
+    // Player đã được YouTube gắn "ad-created" (đã tạo slot QC).
+    function hasAdCreatedClass(player) {
+        return !!player && player.classList.contains(AD_CREATED_CLASS);
+    }
+
+    // Hiện nhãn thương hiệu QC (logo/ngữ "Quảng cáo") → QC đang phát.
+    function hasAdBranding(player) {
+        return !!player && player.classList.contains(AD_BRANDING_CLASS);
+    }
+
+    // API nội bộ của YouTube: trả về trạng thái player (1=đang phát, 2=dừng, 3=đang tua...).
+    // Dùng để biết QC CÓ THỰC SỰ đang phát hay không (đáng tin hơn class trong DOM).
+    function ytPlayerState(player) {
+        try {
+            if (player && typeof player.getPlayerState === "function") return player.getPlayerState();
+        } catch { /* ignore */ }
+        return -1;
+    }
+
+    // YouTube có API getAdState(): 1 = đang phát QC, 2 = QC đã chờ/kết thúc.
+    // Trả về -1 nếu API không có (bản cũ / không phải player YouTube).
+    function ytAdState(player) {
+        try {
+            if (player && typeof player.getAdState === "function") {
+                const s = player.getAdState();
+                if (typeof s === "number") return s;
+            }
+        } catch { /* ignore */ }
+        return -1;
+    }
+
+    // QC có thực sự đang phát? Ưu tiên API YouTube (đáng tin hơn class trong DOM).
+    // -1 = API không có → phải dựa vào DOM.
+    function isAdReallyPlaying(player) {
+        const adState = ytAdState(player);
+        if (adState === 1) return true;
+        if (adState === 2) return false;   // YouTube nói QC đã xong → tin YouTube
+        return -1;
+    }
+
+    // QC bumper (YouTube 2025+): KHÔNG gắn class ad-showing/ad-interrupting,
+    // chỉ có lớp overlay QC + badge QC nằm trong vùng .video-ads.
+    // Phải có CẢ overlay LẪN badge (badge nằm trong overlay) để tránh nhận nhầm
+    // badge sót lại sau khi QC kết thúc (sẽ tua nhầm video chính).
+    function hasBumperAd(player) {
+        const zone = player.querySelector(".video-ads, .ytp-ad-module");
+        if (!zone) return false;
+        const overlay = zone.querySelector(".ytp-ad-player-overlay-layer, .ytp-ad-player-overlay");
+        if (!overlay || !hasBox(overlay)) return false;
+        const badge = overlay.querySelector(AD_BADGE_SELECTORS);
+        return !!badge && hasBox(badge);
+    }
+
+    // UI QC THỰC SỰ đang hiển thị trong player. Đây là tín hiệu ĐÁNG TIN nhất để biết QC đang phát,
+    // vì nó không phụ thuộc tên class do YouTube đặt trên <html class="...">.
+    //
+    // CẨN THẬN — KHÔNG được coi là QC (tránh tua nhầm video chính):
+    //   • .ytp-ad-progress-list (LUÔN có trong thanh tiến trình, kể cả video chính)
+    //   • badge nằm NGOÀI vùng .video-ads (có thể là badge sót lại từ QC trước)
+    // Được coi là QC:
+    //   • nút "Bỏ qua" hiển thị
+    //   • badge QC nằm trong vùng .video-ads / .ytp-ad-module
+    //   • khung chỉ có khi QC: skip-button-slot, interstitial, overlay-container
+    const AD_UI_ALONE_SELECTORS = [
+        ".ytp-ad-skip-button-slot",              // khung chứa nút "Bỏ qua" — chỉ có khi QC
+        ".ytp-ad-action-interstitial",           // thẻ bỏ qua dạng mới
+        ".ytp-video-interstitial-buttoned-centered-layout",
+        ".ytp-ad-survey-player-overlay",
+        ".ytp-ad-overlay-container",             // khung overlay QC (riêng .video-ads)
+    ];
+
+    // Badge QC (nhãn "Quảng cáo") nằm trong vùng .video-ads → chắc chắn đang phát QC.
+    const AD_BADGE_SELECTORS = ".ytp-ad-simple-ad-badge, .ytp-ad-badge, .ytp-ad-badge--clean-player, .ytp-ad-duration-remaining, .ytp-ad-text";
+
+    // Kiểm tra UI QC có hiển thị thật không.
+    // Overlay QC nằm trong vùng .video-ads và có kích thước → QC đang phát.
+    function hasAdOverlayInZone(player) {
+        const zone = player.querySelector(".video-ads, .ytp-ad-module");
+        if (!zone) return false;
+        const ov = zone.querySelector(".ytp-ad-player-overlay-layer, .ytp-ad-player-overlay, .ytp-ad-overlay-container");
+        return !!ov && hasBox(ov);
+    }
+
+    function hasVisibleAdUi(player) {
+        if (!player) return false;
+        // 1) Nút "Bỏ qua" hiển thị → chắc chắn là QC
+        if (findVisibleSkipButton(player)) return true;
+        // 2) UI QC nằm trong vùng .video-ads (badge, overlay có badge) → QC
+        const zone = player.querySelector(".video-ads, .ytp-ad-module");
+        if (zone) {
+            // 2a) Badge QC trong vùng .video-ads → dấu hiệu mạnh nhất
+            const badges = zone.querySelectorAll(AD_BADGE_SELECTORS);
+            for (let i = 0; i < badges.length; i++) {
+                if (hasBox(badges[i])) return true;
+            }
+            // 2b) Overlay QC có badge bên trong
+            const overlay = zone.querySelector(".ytp-ad-player-overlay-layer, .ytp-ad-player-overlay");
+            if (overlay && hasBox(overlay)) {
+                const badge = overlay.querySelector(AD_BADGE_SELECTORS);
+                if (badge && hasBox(badge)) return true;
+            }
+        }
+        // 3) Các khung UI CHỈ có khi QC (khung nút bỏ qua, thẻ interstitial, overlay container)
+        for (let i = 0; i < AD_UI_ALONE_SELECTORS.length; i++) {
+            const els = player.querySelectorAll(AD_UI_ALONE_SELECTORS[i]);
+            for (let j = 0; j < els.length; j++) {
+                if (hasBox(els[j])) return true;
+            }
+        }
+        return false;
     }
 
     function isConfirmedAd(player) {
-        if (!hasAdClass(player)) return false;
-        const signals = player.querySelectorAll(AD_SIGNAL_STR);
-        for (let i = 0; i < signals.length; i++) {
-            if (hasBox(signals[i])) return true;
+        if (!player) return false;
+        // API YouTube báo đang phát QC → xác nhận chắc chắn, kể cả khi DOM chưa kịp render UI.
+        // (Trường hợp UI QC render chậm → không thấy badge/nút "Bỏ qua" → dễ bị bỏ lọt)
+        if (isAdReallyPlaying(player) === true) return true;
+        // Đường 1: có class ad-showing/ad-interrupting + UI QC hiển thị
+        if (hasAdClass(player)) {
+            const signals = player.querySelectorAll(AD_SIGNAL_STR);
+            for (let i = 0; i < signals.length; i++) {
+                if (hasBox(signals[i])) return true;
+            }
         }
+        // Đường 2 (MỚI — fix lỗi thật 2.4.12): YouTube KHÔNG gắn "ad-showing", chỉ gắn
+        // "ad-created" + "ytp-branding-shown" (nhãn QC hiện ra) và UI QC vẫn hiển thị.
+        // → coi như QC khi có UI QC thật sự hiển thị.
+        if (hasAdCreatedClass(player) && hasVisibleAdUi(player)) return true;
+        // Đường 2b: "ad-created" + "ytp-branding-shown" (YouTube đang hiện nhãn QC)
+        // + có overlay QC trong .video-ads → QC chắc chắn đang phát.
+        if (hasAdCreatedClass(player) && hasAdBranding(player) && hasAdOverlayInZone(player)) return true;
+        // Đường 3: QC bumper (overlay + badge), không có class ad-showing
+        if (!hasAdClass(player) && hasBumperAd(player)) return true;
         return false;
     }
 
     // ---------- Máy trạng thái QC theo từng player ----------
     const stateMap = new WeakMap();
     const knownPlayers = new Set();
+    const playerObservers = new Map();
+    const adUiZones = new Map();
 
     function getState(player) {
         let st = stateMap.get(player);
         if (!st) {
-            st = { active: false, savedRate: 1, weMuted: false, weRated: false, video: null };
+            st = { active: false, savedRate: 1, weMuted: false, weRated: false, video: null, seekRetryAt: 0, adStartAt: 0, skipClickedAt: 0, skipApiCalled: false, skipApiAt: 0, skipApiCount: 0 };
             stateMap.set(player, st);
         }
         return st;
+    }
+
+    // ---------- Gọi API skip của player (bỏ qua tức thì, 0 giây) ----------
+    // player.skipAd() là cách nhanh nhất: YouTube tự chuyển thẳng sang video chính.
+    // NHƯNG gọi lặp lại liên tục khiến player re-init liên tục → Chrome đứng.
+    // Vì vậy: tối đa SKIP_API_MAX lần mỗi QC, mỗi lần cách nhau tối thiểu SKIP_API_GAP.
+    const SKIP_API_GAP = 700;
+    const SKIP_API_MAX = 4;
+
+    function trySkipApi(player, st) {
+        if (!st) return false;
+        const now = Date.now();
+        if (st.skipApiCount >= SKIP_API_MAX) return false;
+        if (st.skipApiAt && now - st.skipApiAt < SKIP_API_GAP) return false;
+        if (typeof player.skipAd !== "function") return false;
+        st.skipApiAt = now;
+        st.skipApiCount++;
+        st.skipApiCalled = true;
+        try { player.skipAd(); } catch { /* ignore */ }
+        return true;
     }
 
     let fastAdTimer = null;
@@ -236,7 +427,9 @@
         if (fastAdTimer) return;
         fastAdTimer = setInterval(() => {
             const p = mainPlayer();
-            if (!p || !hasAdClass(p)) {
+            // QC bumper / QC kiểu mới (chỉ có "ad-created") không có class ad-showing/ad-interrupting
+            // → vẫn phải giữ vòng quét nhanh, nếu không QC chỉ được xử lý mỗi 300ms (chậm, dễ lọt).
+            if (!p || (!hasAdClass(p) && !hasBumperAd(p) && !(hasAdCreatedClass(p) && hasVisibleAdUi(p)))) {
                 clearInterval(fastAdTimer);
                 fastAdTimer = null;
                 if (p) processPlayer(p);
@@ -253,6 +446,16 @@
         }
     }
 
+    // Bật/tắt class "fg-ad-active" trên <html> để CSS ẩn lớp phủ QC (người dùng không thấy QC).
+    let fgAdActive = false;
+    function setAdActive(on) {
+        if (fgAdActive === on) return;
+        fgAdActive = on;
+        try {
+            document.documentElement.classList.toggle("fg-ad-active", on);
+        } catch { /* ignore */ }
+    }
+
     function enterAd(player, st, video) {
         st.active = true;
         st.video = video;
@@ -262,11 +465,22 @@
         st.lastDur = 0;
         st.seekedEnd = false;
         st.seeked5 = false;
+        st.adStartAt = Date.now();
+        st.skipClickedAt = 0;
+        st.skipApiCalled = false;
+        st.skipApiAt = 0;
+        st.skipApiCount = 0;
         if (video) {
             try { video.style.opacity = "0"; } catch { /* ignore */ }
         }
+        setAdActive(true);
         startFastAdLoop();
         postCount("video");
+        // Thử skip tức thì qua API player (nhanh nhất có thể) — nhưng chỉ 1 lần,
+        // và vẫn giữ đường dự phòng (bấm nút + tua 16x + seek cuối).
+        setTimeout(() => {
+            try { trySkipApi(player, st); } catch { /* ignore */ }
+        }, 120);
     }
 
     function exitAd(player, st) {
@@ -274,6 +488,12 @@
         st.lastDur = 0;
         st.seekedEnd = false;
         st.seeked5 = false;
+        // Reset mốc "đã bấm nút Bỏ qua" — nếu không, fallbackActive sẽ bị bật sai
+        // ở QC kế tiếp (và QC sau sẽ bị tua thẳng về cuối ngay lập tức).
+        st.skipClickedAt = 0;
+        st.skipApiCalled = false;
+        st.skipApiAt = 0;
+        st.skipApiCount = 0;
         stopFastAdLoop();
         const video = playerVideo(player) || st.video;
         if (video) {
@@ -288,6 +508,7 @@
         st.weMuted = false;
         st.weRated = false;
         st.video = null;
+        setAdActive(false);
         // YouTube có thể nạp lại video chính sau vài trăm ms — kiểm tra lại lần nữa
         setTimeout(() => {
             watchdog(player);
@@ -295,7 +516,9 @@
         }, 400);
     }
 
-    // Dispatch chuỗi sự kiện chuột & pointer đầy đủ — YouTube interstitial bỏ qua .click() đơn thuần
+    // Dispatch chuỗi sự kiện chuột & pointer đầy đủ — YouTube interstitial bỏ qua .click() đơn thuần.
+    // CHỈ gửi MỘT sự kiện "click" trên phần tử trong cùng nhất: bấm nút con rồi gọi el.click() sẽ
+    // kích hoạt handler 2-4 lần (do event nổi lên nút cha) → spam click & loạt trình duyệt.
     function fireClick(el) {
         const rect = el.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
@@ -308,7 +531,6 @@
         try { el.dispatchEvent(new MouseEvent("mousedown", opts)); } catch { /* ignore */ }
         try { el.dispatchEvent(new PointerEvent("pointerup", opts)); } catch { /* ignore */ }
         try { el.dispatchEvent(new MouseEvent("mouseup", opts)); } catch { /* ignore */ }
-        try { el.click(); } catch { /* ignore */ }
         try { el.dispatchEvent(new MouseEvent("click", opts)); } catch { /* ignore */ }
     }
 
@@ -317,37 +539,92 @@
         return !!el.closest("a[href], .ytp-ad-button-vm, .ytp-ad-button-link, .ytp-ad-call-to-action, .ytp-ad-hover-text-button, .ytp-visit-advertiser-button, .ytp-visit-advertiser-link");
     }
 
-    function triggerSkipButton(player, b, now) {
-        if (b.__fgClickAt && now - b.__fgClickAt < 150) return false;
+    // Chống spam click nút "Bỏ qua":
+    //  - Mỗi NÚT chỉ được bấm lại sau SKIP_RETRY_MS (1.2s) — nhanh hơn nhiều so với 3s cũ,
+    //    để nút vừa render là ăn ngay, nhưng vẫn đủ để không spam làm treo trình duyệt.
+    //  - Tổng số lần bấm trên cùng một nút có trần (SKIP_MAX_PER_BTN).
+    const SKIP_RETRY_MS = 1200;
+    const SKIP_MAX_PER_BTN = 8;
+
+    // Thời gian chờ (tính từ lúc vào QC) trước khi tua 16x QC DÀI khi chưa thấy nút "Bỏ qua".
+    // YouTube thường hiện nút "Bỏ qua" sau ~5s; nếu tua quá sớm thì QC vẫn chạy tới hết.
+    const GRACE_MS = 1500;
+
+    // Sau khi bấm nút "Bỏ qua", nếu QC vẫn còn (YouTube chưa chuyển sang video chính) thì
+    // phải có phương án dự phòng: tua 16x + seek tới cuối. Nếu không, QC cứ chạy tới hết
+    // (triệu chứng "phải đợi tới hết time quảng cáo mới tự mất").
+    const SKIP_FALLBACK_MS = 1200;
+
+    function triggerSkipButton(player, b, now, st) {
+        const last = b.__fgClickAt || 0;
+        const count = b.__fgClickCount || 0;
+        if (now - last < SKIP_RETRY_MS) { fgSkipStats.throttled++; return false; }
+        if (count >= SKIP_MAX_PER_BTN) { fgSkipStats.capped++; return false; }
         b.__fgClickAt = now;
-        fireClick(b);
-        const inner = b.querySelector && b.querySelector(".ytp-skip-ad-button__text, .ytp-ad-skip-button__text");
-        if (inner && inner !== b) fireClick(inner);
-        try {
-            if (typeof player.skipAd === "function") player.skipAd();
-        } catch { /* ignore */ }
+        b.__fgClickCount = count + 1;
+        fgSkipStats.fired++;
+        // Ghi nhớ thời điểm bấm đầu tiên → nếu QC vẫn còn sau SKIP_FALLBACK_MS thì chuyển dự phòng
+        if (st && !st.skipClickedAt) st.skipClickedAt = now;
+        // Bọc trong nav guard: nếu nút "Bỏ qua" nằm trong <a> → chặn điều hướng ra trang quảng cáo
+        withNavGuard(() => fireClick(b));
+        // player.skipAd(): gọi lặp lại liên tục khiến player re-init liên tục → Chrome đứng.
+        // Dùng bộ giới hạn tần suất (trySkipApi) thay vì cờ 1 lần.
+        trySkipApi(player, st);
         return true;
     }
 
-    function clickSkip(player) {
-        const now = Date.now();
-        // Pass 1: selector chuẩn + check visible đầy đủ (hasBox bảo đảm không bấm nút đang ẩn)
-        const btns = player.querySelectorAll(SKIP_STR);
-        for (let i = 0; i < btns.length; i++) {
-            const raw = btns[i];
-            if (isCtaOrLink(raw) || !isVisibleEl(raw)) continue;
-            const b = (raw.closest && raw.closest("button")) || raw;
-            if (triggerSkipButton(player, b, now)) return true;
+    // Tìm nút "Bỏ qua" theo CHỮ trong mọi vùng QC (kể cả khi class đã đổi hoàn toàn).
+    // Chỉ nhận phần tử có kích thước thật + không phải CTA nhà quảng cáo.
+    function findSkipByText(player) {
+        const roots = player.querySelectorAll(AD_ZONE_ROOTS);
+        for (let i = 0; i < roots.length; i++) {
+            const candidates = roots[i].querySelectorAll("button, [role='button'], .ytp-ad-component--clickable, [class*='skip']");
+            for (let j = 0; j < candidates.length; j++) {
+                const b = candidates[j];
+                if (isCtaOrLink(b) || !isVisibleEl(b)) continue;
+                const label = (b.getAttribute("aria-label") || b.textContent || "").trim();
+                if (label && SKIP_TEXT_RE.test(label)) return b;
+            }
         }
+        return null;
+    }
+
+    // Gom TẤT CẢ nút "Bỏ qua" ứng viên (đã loại CTA, đã loại nút ẩn).
+    // Dùng chung cho cả "bấm" và "kiểm tra có nút" → tránh tình trạng 2 hàm thấy 2 nút khác nhau.
+    function collectSkipButtons(player) {
+        const out = [];
+        const seen = new Set();
+        const add = (raw) => {
+            if (!raw || seen.has(raw)) return;
+            if (isCtaOrLink(raw) || !isVisibleEl(raw)) return;
+            const b = (raw.closest && raw.closest("button")) || raw;
+            if (seen.has(b)) return;
+            seen.add(b);
+            seen.add(raw);
+            out.push(b);
+        };
+        // Pass 1: selector chuẩn
+        const btns = player.querySelectorAll(SKIP_STR);
+        for (let i = 0; i < btns.length; i++) add(btns[i]);
         // Pass 2: tìm theo chữ "Bỏ qua / Skip" trong vùng QC
         const zone = player.querySelectorAll(AD_ZONE_BUTTONS);
         for (let i = 0; i < zone.length; i++) {
             const b = zone[i];
             if (isCtaOrLink(b) || !isVisibleEl(b)) continue;
             const label = (b.getAttribute("aria-label") || b.textContent || "").trim();
-            if (label && SKIP_TEXT_RE.test(label)) {
-                if (triggerSkipButton(player, b, now)) return true;
-            }
+            if (label && SKIP_TEXT_RE.test(label)) add(b);
+        }
+        // Pass 3: quét MỌI vùng QC tìm nút theo chữ (class lạ) — bắt nút YouTube đặt ngoài .video-ads
+        const byText = findSkipByText(player);
+        if (byText) add(byText);
+        return out;
+    }
+
+    function clickSkip(player, st) {
+        const now = Date.now();
+        const list = collectSkipButtons(player);
+        for (let i = 0; i < list.length; i++) {
+            if (triggerSkipButton(player, list[i], now, st)) return true;
         }
         return false;
     }
@@ -365,11 +642,20 @@
         return false;
     }
 
+    // Tìm nút "Bỏ qua" ĐANG HIỂN THỊ trong vùng QC (không bấm) — dùng để biết
+    // QC đã có nút bỏ qua hay chưa (quyết định có nên seek tới cuối hay không).
+    // Dùng CHUNG collectSkipButtons với clickSkip → hai hàm luôn thấy cùng một nút.
+    function findVisibleSkipButton(player) {
+        const list = collectSkipButtons(player);
+        return list.length ? list[0] : null;
+    }
+
     function handleAd(player, st, video) {
         // Kiểm tra lại ngay trước khi tác động — tránh đụng video chính trong lúc chuyển tiếp
         if (!isConfirmedAd(player)) return;
 
-        clickSkip(player);
+        fgHandleStats.calls++;
+        clickSkip(player, st);
 
         if (!video) return;
         if (video.style.opacity !== "0") {
@@ -379,9 +665,30 @@
             video.muted = true;
             st.weMuted = true;
         }
-        if (fgSettings.fastSkip && !video.ended && !player.classList.contains("ended-mode")) {
+        // ---- Quy tắc tua nhanh QC ----
+        // Mục tiêu: bỏ QC NHANH NHẤT, không bao giờ phải đợi QC chạy tới hết.
+        //   1) Luôn bấm nút "Bỏ qua" ngay khi xuất hiện (clickSkip ở trên).
+        //   2) Luôn tua 16x — tua 16x KHÔNG làm mất nút "Bỏ qua",
+        //      nên không có lý do phải giữ tốc độ 1x cho QC dài.
+        //   3) Nếu đã bấm nút "Bỏ qua" nhưng QC vẫn còn → sau SKIP_FALLBACK_MS
+        //      chuyển sang chế độ dự phòng: seek thẳng tới cuối QC.
+        const dNow = video.duration;
+        const isLongAd = isFinite(dNow) && dNow > 20;
+        const skipBtn = findVisibleSkipButton(player);
+        const skipBtnPresent = !!skipBtn;
+        const adAge = Date.now() - (st.adStartAt || 0);
+        // QC dài: chờ GRACE_MS để nút "Bỏ qua" có cơ hội xuất hiện (YouTube hiện sau ~5s).
+        // QC ngắn: không cần chờ.
+        const graceOver = !isLongAd || adAge >= GRACE_MS;
+
+        // Đã bấm nút "Bỏ qua" từ trước nhưng QC vẫn còn → dự phòng seek cuối
+        const skipFallbackOver = !!st.skipClickedAt && (Date.now() - st.skipClickedAt) >= SKIP_FALLBACK_MS;
+        // Chế độ dự phòng: seek thẳng tới cuối QC (bỏ qua cả kiểm tra buffer)
+        const forceSeekEnd = skipFallbackOver;
+
+        if (fgSettings.fastSkip && graceOver && !video.ended && !player.classList.contains("ended-mode")) {
             if (video.playbackRate !== 16) {
-                try { video.playbackRate = 16; st.weRated = true; } catch { /* ignore */ }
+                try { video.playbackRate = 16; st.weRated = true; fgHandleStats.rateSet++; } catch { /* ignore */ }
             }
             const d = video.duration;
             if (isFinite(d) && d > 0.5) {
@@ -389,15 +696,31 @@
                     st.lastDur = d;
                     st.seekedEnd = false;
                     st.seeked5 = false;
+                    st.seekRetryAt = 0;
                 }
-                // 1) Nếu toàn bộ QC đã nằm trong vùng buffer (QC ngắn) → nhảy thẳng tới d - 0.15 tức thì
-                if (!st.seekedEnd && video.currentTime < d - 0.3 && isBufferedAt(video, d - 0.1)) {
+                // YouTube có thể RESET QC về đầu (currentTime = 0) sau khi ta tua.
+                // Nếu vậy phải tua lại — nhưng chỉ sau một khoảng chờ để tránh vòng lặp tua liên tục.
+                const now = Date.now();
+                const nearStart = video.currentTime < 4.8;
+                if (st.seekedEnd && nearStart && now - (st.seekRetryAt || 0) > 700) {
+                    st.seekedEnd = false;   // cho phép tua lại tới cuối
+                    st.seeked5 = false;
+                    st.seekRetryAt = now;
+                }
+                // 1) Tìm nút "Bỏ qua" đang hiển thị → nếu có nút thì ưu tiên BẤM nút (YouTube tự xử lý).
+                //    Nếu KHÔNG có nút (hoặc đã bấm mà không ăn → forceSeekEnd) → seek tới cuối QC.
+                //    Seek KHÔNG cần buffer: Chrome tự tải phần còn lại (vài KB) — nhanh hơn nhiều
+                //    so với việc phải đợi tua 16x chạy tới hết QC.
+                const canSeekEnd = forceSeekEnd || !skipBtnPresent;
+                if (!st.seekedEnd && canSeekEnd && video.currentTime < d - 0.3) {
                     st.seekedEnd = true;
+                    fgHandleStats.seekEnd++;
                     try { video.currentTime = d - 0.15; } catch { /* ignore */ }
                 } else if (!st.seeked5 && d > 15 && video.currentTime < 4.8 && isBufferedAt(video, 5.2)) {
                     // 2) Nếu QC dài (30s+) chưa buffer tới cuối nhưng đã buffer qua mốc 5s → nhảy thẳng tới 5.0s
                     // để mở khoá nút "Bỏ qua" ngay lập tức mà không làm treo bộ đệm ở cuối video
                     st.seeked5 = true;
+                    fgHandleStats.seek5++;
                     try { video.currentTime = 5.0; } catch { /* ignore */ }
                 }
             }
@@ -440,9 +763,11 @@
             handleAd(player, st, video);
         } else {
             if (st.active) {
-                // Class ad-showing vẫn còn nhưng UI QC tạm biến mất (chuyển giữa 2 QC trong 1 chuỗi):
-                // chờ tối đa 700ms trước khi khôi phục. Mất class → khôi phục ngay.
-                if (hasAdClass(player)) {
+                // UI QC tạm biến mất (chuyển giữa 2 QC trong 1 chuỗi, hoặc YouTube render lại):
+                // chờ tối đa 700ms trước khi khôi phục — CHỈ khi vẫn còn dấu hiệu QC.
+                // Mất hết dấu hiệu → khôi phục NGAY (không để video chính bị kẹt 16x).
+                const stillAdHint = hasAdClass(player) || (hasAdCreatedClass(player) && hasVisibleAdUi(player));
+                if (stillAdHint) {
                     if (!st.missSince) st.missSince = Date.now();
                     if (Date.now() - st.missSince < 700) return;
                 }
@@ -460,6 +785,54 @@
         try {
             const mo = new MutationObserver(() => processPlayer(player));
             mo.observe(player, { attributes: true, attributeFilter: ["class"] });
+            playerObservers.set(player, mo);
+        } catch { /* ignore */ }
+    }
+
+    // Dọn player đã bị YouTube gỡ khỏi DOM.
+    // RẤT QUAN TRỌNG về bộ nhớ: MutationObserver giữ tham chiếu MẠNH tới player
+    // (qua closure). Nếu không disconnect, mỗi lần YouTube thay player (SPA) sẽ
+    // giữ lại player cũ + toàn bộ cây con → rò rỉ bộ nhớ sau vài giờ xem.
+    function releasePlayer(player) {
+        const mo = playerObservers.get(player);
+        if (mo) {
+            try { mo.disconnect(); } catch { /* ignore */ }
+            playerObservers.delete(player);
+        }
+        try { adUiObserver.unobserve(adUiZones.get(player) || player); } catch { /* ignore */ }
+        adUiZones.delete(player);
+        knownPlayers.delete(player);
+    }
+
+    // Theo dõi vùng UI QC để biết khi nút "Bỏ qua" XUẤT HIỆN → bấm ngay lập tức.
+    // Quan sát thực tế: YouTube chèn nút "Bỏ qua" vào DOM sau khi QC đã chạy vài giây.
+    // Không có observer này thì phải chờ tới lượt quét 300ms → thấy muộn.
+    const adUiObserver = new MutationObserver((mutations) => {
+        for (let i = 0; i < mutations.length; i++) {
+            const added = mutations[i].addedNodes;
+            for (let j = 0; j < added.length; j++) {
+                const n = added[j];
+                if (!n || n.nodeType !== 1) continue;
+                const p = mainPlayer();
+                if (!p) continue;
+                // Có thêm node → có thể là nút "Bỏ qua" → xử lý ngay
+                if (isConfirmedAd(p) || hasAdClass(p) || hasAdCreatedClass(p)) {
+                    const st = getState(p);
+                    if (!st.active) enterAd(p, st, playerVideo(p));
+                    handleAd(p, st, playerVideo(p));
+                }
+                return;
+            }
+        }
+    });
+
+    function watchAdUi(player) {
+        if (player.__fgAdUiWatched) return;
+        player.__fgAdUiWatched = true;
+        try {
+            const zone = player.querySelector(".video-ads, .ytp-ad-module") || player;
+            adUiObserver.observe(zone, { childList: true, subtree: true });
+            adUiZones.set(player, zone);
         } catch { /* ignore */ }
     }
 
@@ -485,10 +858,11 @@
         for (let i = 0; i < players.length; i++) {
             attachPlayer(players[i]);
             attachVideo(players[i]);
+            watchAdUi(players[i]);
             processPlayer(players[i]);
         }
         for (const p of knownPlayers) {
-            if (!p.isConnected) knownPlayers.delete(p);
+            if (!p.isConnected) releasePlayer(p);
         }
     }
 
@@ -649,6 +1023,17 @@
         if (!vid || vid === lastRecoveredVid) return;
         lastRecoveredVid = vid;
         lastRecoveredAt = now;
+        // CẦU CHÌ: nếu vừa gỡ slot QC ở tầng mạng mà YouTube lỗi phát video
+        // → ngắt lớp chặn mạng (vĩnh viễn cho phiên này) rồi tải lại video.
+        // Đây là trường hợp hiếm (YouTube đôi khi cần adPlacements để dựng player),
+        // nhưng nếu xảy ra thì phải tự phục hồi thay vì để user bị "văng" khỏi video.
+        try {
+            const net = window.__fgNet;
+            if (net && typeof net.trip === "function" && !net.forced && net.stripped > 0 &&
+                now - (net.lastStripAt || 0) < 30000) {
+                net.trip();
+            }
+        } catch { /* ignore */ }
         try {
             const t = (typeof player.getCurrentTime === "function" && player.getCurrentTime()) || 0;
             if (typeof player.loadVideoById === "function") player.loadVideoById(vid, t > 1 ? t : 0);
@@ -1157,8 +1542,74 @@
     window.addEventListener("resize", () => layoutAmbient(), { passive: true });
     document.addEventListener("fullscreenchange", () => ensureAmbient());
 
+    // ---------- NAV GUARD: chặn điều hướng ra trang nhà quảng cáo ----------
+    // Khi bấm nút "Bỏ qua" trong layout interstitial, nút đôi khi nằm trong <a href="trang QC">.
+    // Bấm vào → trình duyệt NHẢY sang trang quảng cáo → người dùng bị đưa ra ngoài YouTube.
+    // Dùng Navigation API để chặn điều hướng trong đúng khoảnh khắc bấm nút skip.
+    let navBlockedCount = 0;
+    let navGuardDepth = 0;
+
+    function navGuardActive() { return navGuardDepth > 0; }
+
+    function onNavigate(e) {
+        if (!navGuardActive()) return;
+        // Chỉ chặn điều hướng ra ngoài (khác origin hiện tại) — điều hướng nội bộ vẫn hợp lệ
+        let dest = null;
+        try { dest = e.destination && e.destination.url; } catch { /* ignore */ }
+        if (!dest) return;
+        try {
+            const destUrl = new URL(dest, location.href);
+            if (destUrl.origin === location.origin) return;
+            e.preventDefault();
+            navBlockedCount++;
+        } catch { /* ignore */ }
+    }
+
+    try {
+        if (window.navigation && typeof window.navigation.addEventListener === "function") {
+            window.navigation.addEventListener("navigate", onNavigate);
+        }
+    } catch { /* trình duyệt cũ không có Navigation API */ }
+
+    // Dự phòng cho trình duyệt không có Navigation API: chặn click <a> ra ngoài trong khi guard bật
+    document.addEventListener("click", (e) => {
+        if (!navGuardActive()) return;
+        const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+        if (!a) return;
+        try {
+            const href = a.getAttribute("href") || "";
+            if (!/^https?:\/\//i.test(href)) return;
+            const destUrl = new URL(href, location.href);
+            if (destUrl.origin === location.origin) return;
+            e.preventDefault();
+            e.stopPropagation();
+            navBlockedCount++;
+        } catch { /* ignore */ }
+    }, true);
+
+    function withNavGuard(fn) {
+        navGuardDepth++;
+        try { return fn(); } finally { navGuardDepth--; }
+    }
+    function getNavBlocked() { return navBlockedCount; }
+
     // Cho bộ test truy cập hàm thuần (không ảnh hưởng hoạt động)
-    if (window.__FG_TEST__) window.__FG_TEST__.main = { pickJumpTarget, extractHeatMarkers, heatFromDom };
+    if (window.__FG_TEST__) {
+        window.__FG_TEST__.main = { pickJumpTarget, extractHeatMarkers, heatFromDom };
+        window.__FG_TEST__.main.getNavBlocked = getNavBlocked;
+        window.__FG_TEST__.main.withNavGuard = withNavGuard;
+        window.__FG_TEST__.main.trySkipApi = trySkipApi;
+        // Số player đang được theo dõi + số observer còn sống.
+        // Dùng để test rò rỉ bộ nhớ: sau khi player bị gỡ khỏi DOM, cả 2 số
+        // phải về 0 (nếu không, MutationObserver giữ player cũ trong bộ nhớ).
+        window.__FG_TEST__.main.getTracked = () => ({
+            players: knownPlayers.size,
+            observers: playerObservers.size,
+            zones: adUiZones.size,
+        });
+        window.__FG_TEST__.main.releasePlayer = releasePlayer;
+        window.__FG_TEST__.main.scanPlayers = scanPlayers;
+    }
 
     // ---------- Báo lỗi quảng cáo: chụp nhanh trạng thái trình phát (không gửi đi đâu, chỉ chép vào clipboard) ----------
     function describeEl(e) {
@@ -1177,6 +1628,7 @@
         const pagePanels = [...document.querySelectorAll("#below *, #secondary *, #panels *")]
             .filter((e) => /(^|-)ads?(-|$)|sponsor|promoted|companion/i.test(e.tagName) && visible(e))
             .map(describeEl).slice(0, 20);
+        const st = p ? getState(p) : { skipClickedAt: 0 };
         return {
             path: location.pathname + location.search.slice(0, 40),
             playerClass: p ? p.className : null,
@@ -1189,6 +1641,30 @@
             settings: fgSettings,
             whitelisted: isWhitelistedChannel,
             licensed: allowLicense,
+            // Chẩn đoán skip: giúp theo dõi hành vi bỏ QC trên trang YouTube thật
+            ad: {
+                ytAdState: ytAdState(p),
+                ytPlayerState: ytPlayerState(p),
+                reallyPlaying: isAdReallyPlaying(p),
+                adClass: hasAdClass(p),
+                adCreated: hasAdCreatedClass(p),
+                adBranding: hasAdBranding(p),
+                visibleAdUi: hasVisibleAdUi(p),
+                skipBtnPresent: !!findVisibleSkipButton(p),
+                skipCandidates: p ? collectSkipButtons(p).length : 0,
+                skipClickedAt: st.skipClickedAt || 0,
+                fallbackActive: !!(st.skipClickedAt && Date.now() - st.skipClickedAt >= SKIP_FALLBACK_MS),
+                skipApiCount: st.skipApiCount || 0,
+            },
+            skipStats: { ...fgSkipStats },
+            handleStats: { ...fgHandleStats },
+            net: (() => {
+                try {
+                    const net = window.__fgNet;
+                    if (!net) return null;
+                    return { stripped: net.stripped, forced: !!net.forced, ready: !!net.ready, lastStripAt: net.lastStripAt || 0 };
+                } catch { return null; }
+            })(),
         };
     }
 
@@ -1198,6 +1674,9 @@
         if (typeof msg.whitelisted === "boolean") isWhitelistedChannel = msg.whitelisted;
         if (msg.remote) applyRemote(msg.remote);
         scanPlayers();
+        // Vòng quét có thể đã chuyển sang chậm (tab ẩn / vừa tắt extension) →
+        // đồng bộ lại ngay thay vì chờ tick kế tiếp.
+        if (typeof refreshLoopRate === "function") refreshLoopRate();
     }
 
     window.addEventListener("message", (event) => {
@@ -1210,9 +1689,19 @@
             return;
         }
         if (msg.type === "FG_LICENSE") {
+            const wasEnabled = allowLicense;
             allowLicense = !!msg.ok;
             try { sessionStorage.setItem("__fg_lic", allowLicense ? "1" : "0"); } catch { /* ignore */ }
             applyConfig(msg);
+            // Vừa bị tắt bảo vệ → dọn ngay các hiệu ứng (ánh sáng nền, class QC,
+            // nút phụ) thay vì chờ vòng quét kế tiếp (có thể tới 1.5s nếu tab ẩn).
+            if (wasEnabled && !allowLicense) {
+                teardownAmbient();
+                setAdActive(false);
+                stopFastAdLoop();
+                ensurePipButton();
+                ensureJumpButton();
+            }
             return;
         }
         if (msg.type === "FG_RESUME_PLAY") return;
@@ -1234,7 +1723,34 @@
     });
 
     // ---------- Vòng lặp ----------
-    setInterval(() => {
+    // Vòng quét chính. Khi tab ẩn hoặc extension không hoạt động → giảm tần suất
+    // (1.5s thay vì 300ms) để không đốt CPU khi người dùng xem video ở tab khác.
+    // Khi tab nhìn thấy lại → quay về 300ms ngay lập tức (không chờ tick kế tiếp).
+    let mainLoopTimer = null;
+    let mainLoopFast = true;
+    const LOOP_FAST_MS = 300;
+    const LOOP_SLOW_MS = 1500;
+
+    function loopInterval() {
+        // Tab ẩn → chậm. Extension không hoạt động → chậm. Còn lại → nhanh.
+        if (!allowLicense || isWhitelistedChannel) return LOOP_SLOW_MS;
+        if (realVisibility() !== "visible") return LOOP_SLOW_MS;
+        return LOOP_FAST_MS;
+    }
+
+    function scheduleLoop() {
+        if (mainLoopTimer) clearInterval(mainLoopTimer);
+        mainLoopFast = loopInterval() === LOOP_FAST_MS;
+        mainLoopTimer = setInterval(runMainLoop, mainLoopFast ? LOOP_FAST_MS : LOOP_SLOW_MS);
+    }
+
+    // Đồng bộ lại tần suất quét mà không cần chờ tick kế tiếp.
+    function refreshLoopRate() {
+        const wantFast = loopInterval() === LOOP_FAST_MS;
+        if (wantFast !== mainLoopFast) scheduleLoop();
+    }
+
+    function runMainLoop() {
         scanPlayers();
         ensurePipButton();
         ensureJumpButton();
@@ -1242,7 +1758,12 @@
         applyQuality(mainPlayer());
         maybeRequestSponsor();
         if (allowLicense && !isWhitelistedChannel) recoverFromPlaybackError();
-    }, 300);
+        // Tự điều chỉnh tần suất theo trạng thái hiện tại (tab vừa ẩn/hiện).
+        refreshLoopRate();
+    }
+
+    scheduleLoop();
+    onRealVisibilityChange(() => scheduleLoop());
 
     setInterval(() => {
         if (!allowLicense || isWhitelistedChannel || !fgSettings.blockAntiAdblock) return;

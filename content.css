@@ -31,6 +31,10 @@ ad-grid-card-collection-view-model,
 ytd-video-masthead-ad-v3-renderer,
 ytd-search-pyv-renderer,
 ytd-promoted-video-renderer,
+ytd-ad-inline-playback-meta-block,
+ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer),
+ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
+ytd-rich-section-renderer:has(ytd-statement-banner-renderer),
 #below #player-ads,
 #panels ytd-ads-engagement-panel-content-renderer {
     display: none !important;

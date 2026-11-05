@@ -161,6 +161,21 @@
                 !!window.ytInitialPlayerResponse.streamingData &&
                 window.ytInitialPlayerResponse.streamingData.formats.length === 1);
 
+            // 12. Gỡ QC đồng bộ ở 0ms (không cần setTimeout / chờ setInterval) ngay dòng kế tiếp
+            const syncProbe = Object.assign(JSON.parse(JSON.stringify(PLAYER_RESPONSE)), {
+                adBreakHeartbeatParams: "heartbeat_token_xyz",
+            });
+            const t0 = performance.now();
+            window.ytInitialPlayerResponse = syncProbe;
+            const dt = Math.round(performance.now() - t0);
+            check("N26 gán ytInitialPlayerResponse -> gỡ QC đồng bộ ở 0ms",
+                window.ytInitialPlayerResponse.adPlacements.length === 0 &&
+                window.ytInitialPlayerResponse.playerAds.length === 0 &&
+                window.ytInitialPlayerResponse.adSlots.length === 0,
+                `len=${window.ytInitialPlayerResponse.adPlacements.length} delay=${dt}ms`);
+            check("N27 gỡ luôn adBreakHeartbeatParams (chặn mid-roll QC)",
+                !("adBreakHeartbeatParams" in window.ytInitialPlayerResponse));
+
             document.getElementById("out").textContent = results.join("\n");
         } catch (e) {
             results.push("FAIL exception: " + (e && e.stack || e));

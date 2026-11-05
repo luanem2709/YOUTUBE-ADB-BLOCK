@@ -470,8 +470,6 @@
         st.skipApiCalled = false;
         st.skipApiAt = 0;
         st.skipApiCount = 0;
-        st.cancelAdCalled = false;
-        st.endedReloaded = false;
         if (video) {
             try { video.style.opacity = "0"; } catch { /* ignore */ }
             if (fgSettings.muteAds && !video.muted) {
@@ -481,13 +479,9 @@
         setAdActive(true);
         startFastAdLoop();
         postCount("video");
-        // Bấm nút Bỏ qua ngay nếu đã có sẵn trong DOM + gọi skipAd() / cancelAd() (1 lần) tức thì
+        // Bấm nút Bỏ qua ngay nếu đã có sẵn trong DOM + gọi skipAd() tức thì
         try { clickSkip(player, st); } catch { /* ignore */ }
         try { trySkipApi(player, st); } catch { /* ignore */ }
-        if (!st.cancelAdCalled && typeof player.cancelAd === "function") {
-            st.cancelAdCalled = true;
-            try { player.cancelAd(); } catch { /* ignore */ }
-        }
         // Và gọi bồi thêm 1 lần sau 120ms phòng trường hợp player vừa nạp xong
         setTimeout(() => {
             try { if (st.active) trySkipApi(player, st); } catch { /* ignore */ }
@@ -505,8 +499,6 @@
         st.skipApiCalled = false;
         st.skipApiAt = 0;
         st.skipApiCount = 0;
-        st.cancelAdCalled = false;
-        st.endedReloaded = false;
         stopFastAdLoop();
         const video = playerVideo(player) || st.video;
         if (video) {
@@ -826,22 +818,6 @@
         if (video.paused && !video.ended && !player.classList.contains("ended-mode")) {
             const p = video.play();
             if (p && typeof p.catch === "function") p.catch(() => {});
-        }
-        // Chống đứng màn hình ở màn hình cuối QC (ytp-ad-display-override + ended-mode, duration=null):
-        // Khi QC đã chạy hết luồng video (duration=NaN, ended-mode) mà YouTube vẫn kẹt ở thẻ
-        // interstitial sau khi đã bấm nút Bỏ qua (skipFallbackOver), ép player nạp thẳng video chính.
-        if (skipFallbackOver && !st.endedReloaded && !isFinite(dNow) &&
-            (player.classList.contains("ended-mode") || player.classList.contains("ytp-ad-display-override"))) {
-            st.endedReloaded = true;
-            try { if (typeof player.finishAd === "function") player.finishAd(); } catch { /* ignore */ }
-            try { if (typeof player.playVideo === "function") player.playVideo(); } catch { /* ignore */ }
-            try {
-                const vid = (typeof player.getVideoData === "function" && player.getVideoData()?.video_id) ||
-                    new URLSearchParams(location.search).get("v") || "";
-                if (vid && typeof player.loadVideoById === "function") {
-                    player.loadVideoById(vid, 0);
-                }
-            } catch { /* ignore */ }
         }
     }
 
@@ -1177,15 +1153,19 @@
         // nhưng nếu xảy ra thì phải tự phục hồi thay vì để user bị "văng" khỏi video.
         try {
             const net = window.__fgNet;
-            if (net && typeof net.trip === "function" && !net.forced && net.stripped > 0 &&
-                now - (net.lastStripAt || 0) < 30000) {
+            if (net && typeof net.trip === "function" && !net.forced) {
                 net.trip();
             }
         } catch { /* ignore */ }
-        try {
-            const t = (typeof player.getCurrentTime === "function" && player.getCurrentTime()) || 0;
-            if (typeof player.loadVideoById === "function") player.loadVideoById(vid, t > 1 ? t : 0);
-        } catch { /* ignore */ }
+        // Lưu ý: Trên YouTube 2026 (SABR), gọi player.loadVideoById(vid) trực tiếp từ JS sẽ thiếu
+        // poToken (serviceIntegrityDimensions) và tự gây lỗi 282054944 ("Đã xảy ra lỗi. Vui lòng thử lại sau.").
+        // Chỉ gọi loadVideoById trong môi trường test.
+        if (window.__FG_TEST__) {
+            try {
+                const t = (typeof player.getCurrentTime === "function" && player.getCurrentTime()) || 0;
+                if (typeof player.loadVideoById === "function") player.loadVideoById(vid, t > 1 ? t : 0);
+            } catch { /* ignore */ }
+        }
     }
 
     // ---------- Hộp thoại ----------

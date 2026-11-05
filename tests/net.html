@@ -207,6 +207,23 @@
                 !("adBreakParams" in innerPr) &&
                 innerPr.streamingData.formats.length === 1);
 
+            // 14. Bẫy đồng bộ 0ms trên window.ytInitialData + gỡ luôn bkaEnforcementMessageViewModel (chống anti-adblock từ tầng mạng)
+            window.ytInitialData = {
+                contents: {
+                    twoColumnBrowseResultsRenderer: {
+                        adSlots: [{ adSlotRenderer: {} }],
+                    },
+                },
+                auxiliaryUi: {
+                    messageRenderers: {
+                        bkaEnforcementMessageViewModel: { text: "Ad blockers violate ToS" },
+                    },
+                },
+            };
+            check("N29 ytInitialData gỡ adSlots + bkaEnforcementMessageViewModel ở 0ms",
+                window.ytInitialData.contents.twoColumnBrowseResultsRenderer.adSlots.length === 0 &&
+                !("bkaEnforcementMessageViewModel" in window.ytInitialData.auxiliaryUi.messageRenderers));
+
             document.getElementById("out").textContent = results.join("\n");
         } catch (e) {
             results.push("FAIL exception: " + (e && e.stack || e));

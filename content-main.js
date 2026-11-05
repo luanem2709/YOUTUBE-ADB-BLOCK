@@ -436,7 +436,7 @@
                 return;
             }
             processPlayer(p);
-        }, 35);
+        }, 16);
     }
 
     function stopFastAdLoop() {
@@ -472,6 +472,9 @@
         st.skipApiCount = 0;
         if (video) {
             try { video.style.opacity = "0"; } catch { /* ignore */ }
+            if (fgSettings.muteAds && !video.muted) {
+                try { video.muted = true; st.weMuted = true; } catch { /* ignore */ }
+            }
         }
         setAdActive(true);
         startFastAdLoop();
@@ -812,7 +815,20 @@
     const adUiObserver = new MutationObserver((mutations) => {
         if (!adBlockingActive()) return;
         for (let i = 0; i < mutations.length; i++) {
-            const added = mutations[i].addedNodes;
+            const m = mutations[i];
+            if (m.type === "attributes") {
+                const t = m.target;
+                if (!t || t.nodeType !== 1) continue;
+                const cls = typeof t.className === "string" ? t.className : "";
+                const id = t.id || "";
+                if (/skip|ad-overlay|interstitial/i.test(cls) || /skip/i.test(id)) {
+                    const p = mainPlayer();
+                    if (p) processPlayer(p);
+                    return;
+                }
+                continue;
+            }
+            const added = m.addedNodes;
             for (let j = 0; j < added.length; j++) {
                 const n = added[j];
                 if (!n || n.nodeType !== 1) continue;
@@ -829,9 +845,14 @@
         if (player.__fgAdUiWatched) return;
         player.__fgAdUiWatched = true;
         try {
-            // Quan sát trên toàn bộ player thay vì chỉ .video-ads để bắt được cả nút skip
-            // trong .ytp-video-interstitial-buttoned-centered-layout nằm ngoài .video-ads
-            adUiObserver.observe(player, { childList: true, subtree: true });
+            // Quan sát trên toàn bộ player (cả thêm node mới lẫn đổi style/class ẩn->hiện của nút skip)
+            // để bắt được nút skip ngay ở 0ms kể cả khi YouTube tạo sẵn nút rồi mới bỏ display:none
+            adUiObserver.observe(player, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ["style", "class", "hidden", "disabled"],
+            });
             adUiZones.set(player, player);
         } catch { /* ignore */ }
     }

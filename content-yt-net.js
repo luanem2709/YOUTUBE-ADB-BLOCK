@@ -227,7 +227,7 @@
     }
     function isPlayerApi(url) {
         if (!url) return false;
-        return /\/youtubei\/v1\/player(\?|$)/.test(url);
+        return /\/youtubei\/v1\/(player|reel\/reel_item_watch|next)(\?|$)/.test(url);
     }
 
     window.fetch = async function (...args) {
@@ -413,6 +413,10 @@
         if (scans >= 200) clearInterval(scanTimer); // ~20s rồi dừng quét liên tục
     }, 100);
     scanGlobals();
+
+    // Quét lại khi YouTube chuyển trang SPA (yt-navigate-finish / yt-page-data-updated)
+    document.addEventListener("yt-navigate-finish", () => scanGlobals());
+    document.addEventListener("yt-page-data-updated", () => scanGlobals());
 
     // ---------- Cầu chì: nếu gỡ slot QC làm YouTube lỗi phát video ----------
     S.trip = function () {

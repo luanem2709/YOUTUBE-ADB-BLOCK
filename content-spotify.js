@@ -398,7 +398,7 @@
         if (!delta) return;
         try {
             chrome.storage.local.get(["adsBlocked", "statsBreakdown", "statsHistory"], (r) => {
-                const breakdown = { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0, ...(r.statsBreakdown || {}) };
+                const breakdown = { video: 0, banner: 0, overlay: 0, antiAdblock: 0, shopping: 0, spotify: 0, ...(r.statsBreakdown || {}) };
                 breakdown.spotify = (breakdown.spotify || 0) + delta;
 
                 const history = [...(r.statsHistory || [])];

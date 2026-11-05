@@ -89,6 +89,15 @@ html.fg-no-shopping .carousel-offer-url-container {
 .html5-video-player.ad-showing .ytp-ad-overlay-container,
 .html5-video-player.ad-interrupting .ytp-ad-overlay-container,
 .html5-video-player.ad-created .ytp-ad-overlay-container,
+.html5-video-player.ad-showing .ytp-ad-action-interstitial,
+.html5-video-player.ad-interrupting .ytp-ad-action-interstitial,
+.html5-video-player.ad-created .ytp-ad-action-interstitial,
+.html5-video-player.ad-showing .ytp-video-interstitial-buttoned-centered-layout,
+.html5-video-player.ad-interrupting .ytp-video-interstitial-buttoned-centered-layout,
+.html5-video-player.ad-created .ytp-video-interstitial-buttoned-centered-layout,
+.html5-video-player.ad-showing .ytp-ad-survey-player-overlay,
+.html5-video-player.ad-interrupting .ytp-ad-survey-player-overlay,
+.html5-video-player.ad-created .ytp-ad-survey-player-overlay,
 .html5-video-player.ad-showing .ytp-ad-progress-list,
 .html5-video-player.ad-interrupting .ytp-ad-progress-list,
 .html5-video-player.ad-created .ytp-ad-progress-list {
@@ -99,8 +108,12 @@ html.fg-no-shopping .carousel-offer-url-container {
 /* Khi đang có QC, ẩn nốt lớp phủ QC còn sót lại trên trang (overlay ngoài player) */
 html.fg-ad-active .ytp-ad-overlay-container,
 html.fg-ad-active .ytp-ad-player-overlay,
-html.fg-ad-active .ytp-ad-player-overlay-layer {
+html.fg-ad-active .ytp-ad-player-overlay-layer,
+html.fg-ad-active .ytp-ad-action-interstitial,
+html.fg-ad-active .ytp-video-interstitial-buttoned-centered-layout,
+html.fg-ad-active .ytp-ad-survey-player-overlay {
     opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 /* Dialog chống QC bị ẩn nhưng YouTube vẫn khóa scroll — mở lại lăn chuột */

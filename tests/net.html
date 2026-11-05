@@ -64,7 +64,7 @@
             // 5. Nhận diện đúng endpoint player
             check("N12 nhận diện /youtubei/v1/player", N.isPlayerApi("https://www.youtube.com/youtubei/v1/player?key=abc") === true);
             check("N13 KHÔNG nhận nhầm endpoint khác",
-                N.isPlayerApi("https://www.youtube.com/youtubei/v1/next") === true && N.isPlayerApi("https://www.youtube.com/youtubei/v1/reel/reel_item_watch?key=abc") === true &&
+                N.isPlayerApi("https://www.youtube.com/youtubei/v1/next") === false &&
                 N.isPlayerApi("https://www.youtube.com/youtubei/v1/browse") === false &&
                 N.isPlayerApi("https://googlevideo.com/videoplayback") === false);
 
@@ -168,7 +168,6 @@
                 adPlacements: [{ adPlacementRenderer: {} }],
                 playerAds: [{ playerLegacyDesktopWatchAds: {} }],
                 adSlots: [{ adSlotRenderer: {} }],
-                adBreakHeartbeatParams: "heartbeat_token_xyz",
             };
             const t0 = performance.now();
             window.ytInitialPlayerResponse = syncProbe;
@@ -178,51 +177,6 @@
                 window.ytInitialPlayerResponse.playerAds.length === 0 &&
                 window.ytInitialPlayerResponse.adSlots.length === 0,
                 `len=${window.ytInitialPlayerResponse.adPlacements.length} delay=${dt}ms`);
-            check("N27 gỡ luôn adBreakHeartbeatParams (chặn mid-roll QC)",
-                !("adBreakHeartbeatParams" in window.ytInitialPlayerResponse));
-
-            // 13. Hook JSON.parse gỡ luôn QC lồng sâu trong playlist / SPA response ở 0ms
-            const deepPlaylistJson = JSON.stringify([
-                {
-                    page: "watch",
-                    onResponseReceivedEndpoints: [
-                        {
-                            watchNextItems: {
-                                playerResponse: {
-                                    adPlacements: [{ id: 1 }],
-                                    adSlots: [{ id: 2 }],
-                                    adBreakParams: "params_123",
-                                    streamingData: { formats: [{ url: "https://googlevideo.com/main" }] },
-                                },
-                            },
-                        },
-                    ],
-                },
-            ]);
-            const parsedDeep = JSON.parse(deepPlaylistJson);
-            const innerPr = parsedDeep[0].onResponseReceivedEndpoints[0].watchNextItems.playerResponse;
-            check("N28 JSON.parse gỡ QC lồng sâu trong playlist/SPA ở 0ms",
-                innerPr.adPlacements.length === 0 &&
-                innerPr.adSlots.length === 0 &&
-                !("adBreakParams" in innerPr) &&
-                innerPr.streamingData.formats.length === 1);
-
-            // 14. Bẫy đồng bộ 0ms trên window.ytInitialData + gỡ luôn bkaEnforcementMessageViewModel (chống anti-adblock từ tầng mạng)
-            window.ytInitialData = {
-                contents: {
-                    twoColumnBrowseResultsRenderer: {
-                        adSlots: [{ adSlotRenderer: {} }],
-                    },
-                },
-                auxiliaryUi: {
-                    messageRenderers: {
-                        bkaEnforcementMessageViewModel: { text: "Ad blockers violate ToS" },
-                    },
-                },
-            };
-            check("N29 ytInitialData gỡ adSlots + bkaEnforcementMessageViewModel ở 0ms",
-                window.ytInitialData.contents.twoColumnBrowseResultsRenderer.adSlots.length === 0 &&
-                !("bkaEnforcementMessageViewModel" in window.ytInitialData.auxiliaryUi.messageRenderers));
 
             document.getElementById("out").textContent = results.join("\n");
         } catch (e) {

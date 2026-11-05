@@ -971,6 +971,7 @@
         video.__fgHooked = true;
         const onMedia = () => processPlayer(player);
         video.addEventListener("loadedmetadata", onMedia);
+        video.addEventListener("durationchange", onMedia);
         video.addEventListener("playing", onMedia);
         video.addEventListener("ratechange", onMedia);
         video.addEventListener("timeupdate", onMedia);
@@ -979,6 +980,23 @@
             video.addEventListener("timeupdate", () => onSponsorTimeUpdate(player, video));
             // Video mới được nạp (đổi clip) → theo dõi 8s đầu, YouTube hay pause ngay lúc này
             video.addEventListener("loadeddata", () => startLoadWatch());
+        }
+    }
+
+    let lastShortsAdSkipAt = 0;
+    function skipActiveShortsAd() {
+        if (!adBlockingActive() || !/^\/shorts\//.test(location.pathname)) return;
+        const now = Date.now();
+        if (now - lastShortsAdSkipAt < 800) return;
+        const activeReel = document.querySelector(
+            "ytd-reel-video-renderer[is-active] ytd-ad-slot-renderer, ytd-reel-video-renderer[is-active] ytd-in-feed-ad-layout-renderer"
+        );
+        if (!activeReel) return;
+        const downBtn = document.querySelector("#navigation-button-down button, ytd-shorts #navigation-button-down button");
+        if (downBtn) {
+            lastShortsAdSkipAt = now;
+            postCount("video");
+            fireClick(downBtn);
         }
     }
 
@@ -993,6 +1011,7 @@
         for (const p of knownPlayers) {
             if (!p.isConnected) releasePlayer(p);
         }
+        skipActiveShortsAd();
     }
 
     // ---------- Chống YouTube tự pause (chỉ video chính trên trang /watch) ----------

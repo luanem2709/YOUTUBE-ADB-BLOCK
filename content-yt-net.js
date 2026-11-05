@@ -100,8 +100,15 @@
     if (fastPath) markReady();
 
     // ---------- Làm sạch playerResponse ----------
-    // Các mảng/khóa chứa slot quảng cáo. Xoá (đặt rỗng) → player không tạo QC nào.
-    const AD_SLOT_KEYS = ["adPlacements", "playerAds", "adSlots", "adBreakHeartbeatParams", "adBreakParams"];
+    // Các mảng/khóa chứa slot quảng cáo và thông báo chặn adblock. Xoá (đặt rỗng) → player không tạo QC nào.
+    const AD_ARRAY_KEYS = ["adPlacements", "playerAds", "adSlots"];
+    const AD_DELETE_KEYS = [
+        "adBreakHeartbeatParams",
+        "adBreakParams",
+        "adSafetyReason",
+        "bkaEnforcementMessageViewModel",
+        "enforcementMessageViewModel",
+    ];
     const SKIP_TRAVERSE_KEYS = new Set([
         "streamingData", "formats", "adaptiveFormats", "storyboards",
         "captions", "microformat", "cards", "annotations", "frameworkUpdates",
@@ -116,7 +123,9 @@
             text.indexOf("playerAds") !== -1 ||
             text.indexOf("adSlots") !== -1 ||
             text.indexOf("adBreakHeartbeatParams") !== -1 ||
-            text.indexOf("adBreakParams") !== -1
+            text.indexOf("adBreakParams") !== -1 ||
+            text.indexOf("bkaEnforcementMessageViewModel") !== -1 ||
+            text.indexOf("enforcementMessageViewModel") !== -1
         );
     }
 
@@ -134,12 +143,16 @@
             }
             return changed;
         }
-        for (let i = 0; i < AD_SLOT_KEYS.length; i++) {
-            const k = AD_SLOT_KEYS[i];
+        for (let i = 0; i < AD_ARRAY_KEYS.length; i++) {
+            const k = AD_ARRAY_KEYS[i];
             if (Array.isArray(obj[k]) && obj[k].length) {
                 obj[k] = [];
                 changed = true;
-            } else if ((k === "adBreakHeartbeatParams" || k === "adBreakParams") && obj[k]) {
+            }
+        }
+        for (let i = 0; i < AD_DELETE_KEYS.length; i++) {
+            const k = AD_DELETE_KEYS[i];
+            if (k in obj && obj[k] !== undefined) {
                 delete obj[k];
                 changed = true;
             }
@@ -148,7 +161,7 @@
         // nhưng tuyệt đối bỏ qua streamingData/formats để không chạm vào luồng video chính
         for (const k in obj) {
             if (SKIP_TRAVERSE_KEYS.has(k)) continue;
-            if (k === "adPlacements" || k === "playerAds" || k === "adSlots" || k === "adBreakHeartbeatParams" || k === "adBreakParams") continue;
+            if (k === "adPlacements" || k === "playerAds" || k === "adSlots") continue;
             const child = obj[k];
             if (child && typeof child === "object") {
                 if (sanitizeObject(child, d + 1)) changed = true;
@@ -434,46 +447,91 @@
             if (args && typeof args.player_response === "string") {
                 args.player_response = sanitizeText(args.player_response);
             }
+            if (args && args.raw_player_response && typeof args.raw_player_response === "object") {
+                if (sanitizeObject(args.raw_player_response, 0)) {
+                    S.stripped++;
+                    S.lastStripAt = Date.now();
+                }
+            }
+        } catch { /* ignore */ }
+
+        // 4) ytInitialData — chứa adSlots trang chủ / tìm kiếm / cột phải / Shorts
+        try {
+            const idata = window.ytInitialData;
+            if (idata && typeof idata === "object" && !idata.__fgSanitized) {
+                if (sanitizeObject(idata, 0)) {
+                    S.stripped++;
+                    S.lastStripAt = Date.now();
+                }
+                try { idata.__fgSanitized = true; } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
+
+        // 5) Hook các hàm nạp dữ liệu video mới trên #movie_player khi chuyển bài SPA / Playlist
+        try {
+            const mp = document.getElementById("movie_player");
+            if (mp && !mp.__fgNetPatched) {
+                const methods = ["loadVideoByPlayerVars", "cueVideoByPlayerVars", "updateVideoData"];
+                for (let i = 0; i < methods.length; i++) {
+                    const m = methods[i];
+                    const orig = mp[m];
+                    if (typeof orig === "function") {
+                        mp[m] = function (arg) {
+                            try {
+                                if (arg && typeof arg === "object" && shouldStrip()) {
+                                    sanitizeCfgValue("player_response", arg);
+                                }
+                            } catch { /* ignore */ }
+                            return orig.apply(this, arguments);
+                        };
+                    }
+                }
+                mp.__fgNetPatched = true;
+            }
         } catch { /* ignore */ }
     }
 
-    // ---------- Hook đồng bộ 0ms cho ytInitialPlayerResponse & Response.prototype.json ----------
-    // Thay vì chờ setInterval 100ms, setter trên window.ytInitialPlayerResponse sẽ gỡ slot QC
+    // ---------- Hook đồng bộ 0ms cho ytInitialPlayerResponse, ytInitialData & Response.prototype.json ----------
+    // Thay vì chờ setInterval 100ms, setter trên window.ytInitialPlayerResponse / ytInitialData sẽ gỡ slot QC
     // NGAY KHOẢNH KHẮC thẻ <script> của YouTube gán biến (trước khi player kịp đọc 0ms).
-    try {
-        let _ytInitialPR = window.ytInitialPlayerResponse;
-        if (_ytInitialPR && typeof _ytInitialPR === "object" && shouldStrip()) {
-            if (sanitizeObject(_ytInitialPR, 0)) {
-                S.stripped++;
-                S.lastStripAt = Date.now();
+    function defineGlobalTrap(propName) {
+        try {
+            let _val = window[propName];
+            if (_val && typeof _val === "object" && shouldStrip()) {
+                if (sanitizeObject(_val, 0)) {
+                    S.stripped++;
+                    S.lastStripAt = Date.now();
+                }
+                try { _val.__fgSanitized = true; } catch { /* ignore */ }
             }
-            try { _ytInitialPR.__fgSanitized = true; } catch { /* ignore */ }
-        }
-        Object.defineProperty(window, "ytInitialPlayerResponse", {
-            configurable: true,
-            enumerable: true,
-            get() {
-                if (_ytInitialPR && typeof _ytInitialPR === "object" && !_ytInitialPR.__fgSanitized && shouldStrip()) {
-                    if (sanitizeObject(_ytInitialPR, 0)) {
-                        S.stripped++;
-                        S.lastStripAt = Date.now();
+            Object.defineProperty(window, propName, {
+                configurable: true,
+                enumerable: true,
+                get() {
+                    if (_val && typeof _val === "object" && !_val.__fgSanitized && shouldStrip()) {
+                        if (sanitizeObject(_val, 0)) {
+                            S.stripped++;
+                            S.lastStripAt = Date.now();
+                        }
+                        try { _val.__fgSanitized = true; } catch { /* ignore */ }
                     }
-                    try { _ytInitialPR.__fgSanitized = true; } catch { /* ignore */ }
-                }
-                return _ytInitialPR;
-            },
-            set(val) {
-                if (val && typeof val === "object" && shouldStrip()) {
-                    if (sanitizeObject(val, 0)) {
-                        S.stripped++;
-                        S.lastStripAt = Date.now();
+                    return _val;
+                },
+                set(val) {
+                    if (val && typeof val === "object" && shouldStrip()) {
+                        if (sanitizeObject(val, 0)) {
+                            S.stripped++;
+                            S.lastStripAt = Date.now();
+                        }
+                        try { val.__fgSanitized = true; } catch { /* ignore */ }
                     }
-                    try { val.__fgSanitized = true; } catch { /* ignore */ }
-                }
-                _ytInitialPR = val;
-            },
-        });
-    } catch { /* ignore */ }
+                    _val = val;
+                },
+            });
+        } catch { /* ignore */ }
+    }
+    defineGlobalTrap("ytInitialPlayerResponse");
+    defineGlobalTrap("ytInitialData");
 
     // Hook Response.prototype.json() và JSON.parse() (kế thừa từ v2.3.9) để bắt mọi luồng
     // YouTube giải mã playerResponse (kể cả qua ReadableStream / ArrayBuffer / playlist / SPA) ở 0ms

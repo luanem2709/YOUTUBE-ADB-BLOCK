@@ -1,0 +1,58 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - "mobile/**"
+      - "content*.js"
+      - "content.css"
+      - "license.js"
+      - "popup.*"
+      - "options.*"
+      - "stats.*"
+      - "manifest.json"
+      - ".github/workflows/build-ios-ipa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Cài đặt Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Biên dịch và đóng gói FUNNYGAME.ipa (Xcode + Safari Extension)
+        run: |
+          chmod +x ios/build-ipa.sh
+          ./ios/build-ipa.sh
+
+      - name: Tải lên Artifact FUNNYGAME-iOS.ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: FUNNYGAME-iOS-IPA
+          path: |
+            release/funnygame-ios.ipa
+            dist/funnygame-ios-v*.ipa
+          retention-days: 90
+
+      - name: Lưu file release/funnygame-ios.ipa vào kho mã nguồn
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add release/funnygame-ios.ipa
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(ios): cap nhat goi cai dat release/funnygame-ios.ipa [skip ci]"
+            git pull --rebase origin main
+            git push origin main
+          fi

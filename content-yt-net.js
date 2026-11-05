@@ -101,7 +101,7 @@
 
     // ---------- Làm sạch playerResponse ----------
     // Các mảng chứa slot quảng cáo. Xoá (đặt rỗng) → player không tạo QC nào.
-    const AD_SLOT_KEYS = ["adPlacements", "playerAds", "adSlots"];
+    const AD_SLOT_KEYS = ["adPlacements", "playerAds", "adSlots", "adBreakHeartbeatParams"];
     // Tên biến chứa playerResponse dạng chuỗi JSON.
     const PLAYER_KEY_RE = /player_?response|playerresponse/i;
 
@@ -114,6 +114,9 @@
             const k = AD_SLOT_KEYS[i];
             if (Array.isArray(obj[k]) && obj[k].length) {
                 obj[k] = [];
+                changed = true;
+            } else if (k === "adBreakHeartbeatParams" && obj[k]) {
+                delete obj[k];
                 changed = true;
             }
         }
@@ -133,7 +136,7 @@
         // Phải là JSON object (bắt đầu bằng '{', sau khi bỏ khoảng trắng đầu)
         const start = text.search(/\S/);
         if (start < 0 || text.charCodeAt(start) !== 123) return text; // 123 = '{'
-        if (text.indexOf("adPlacements") === -1 && text.indexOf("playerAds") === -1 && text.indexOf("adSlots") === -1) {
+        if (text.indexOf("adPlacements") === -1 && text.indexOf("playerAds") === -1 && text.indexOf("adSlots") === -1 && text.indexOf("adBreakHeartbeatParams") === -1) {
             return text;
         }
         try {
@@ -214,6 +217,7 @@
             blockManifest = msg.settings.blockManifest !== false;
         }
         markReady();
+        scanGlobals();
     });
 
     // ---------- Hook fetch (đường chính của YouTube hiện nay) ----------
@@ -404,6 +408,63 @@
             }
         } catch { /* ignore */ }
     }
+
+    // ---------- Hook đồng bộ 0ms cho ytInitialPlayerResponse & Response.prototype.json ----------
+    // Thay vì chờ setInterval 100ms, setter trên window.ytInitialPlayerResponse sẽ gỡ slot QC
+    // NGAY KHOẢNH KHẮC thẻ <script> của YouTube gán biến (trước khi player kịp đọc 0ms).
+    try {
+        let _ytInitialPR = window.ytInitialPlayerResponse;
+        if (_ytInitialPR && typeof _ytInitialPR === "object" && shouldStrip()) {
+            if (sanitizeObject(_ytInitialPR, 0)) {
+                S.stripped++;
+                S.lastStripAt = Date.now();
+            }
+            try { _ytInitialPR.__fgSanitized = true; } catch { /* ignore */ }
+        }
+        Object.defineProperty(window, "ytInitialPlayerResponse", {
+            configurable: true,
+            enumerable: true,
+            get() {
+                if (_ytInitialPR && typeof _ytInitialPR === "object" && !_ytInitialPR.__fgSanitized && shouldStrip()) {
+                    if (sanitizeObject(_ytInitialPR, 0)) {
+                        S.stripped++;
+                        S.lastStripAt = Date.now();
+                    }
+                    try { _ytInitialPR.__fgSanitized = true; } catch { /* ignore */ }
+                }
+                return _ytInitialPR;
+            },
+            set(val) {
+                if (val && typeof val === "object" && shouldStrip()) {
+                    if (sanitizeObject(val, 0)) {
+                        S.stripped++;
+                        S.lastStripAt = Date.now();
+                    }
+                    try { val.__fgSanitized = true; } catch { /* ignore */ }
+                }
+                _ytInitialPR = val;
+            },
+        });
+    } catch { /* ignore */ }
+
+    // Hook Response.prototype.json() để bắt cả trường hợp YouTube gọi res.json() trực tiếp
+    try {
+        const origJson = Response.prototype.json;
+        if (typeof origJson === "function") {
+            Response.prototype.json = async function () {
+                const data = await origJson.apply(this, arguments);
+                try {
+                    if (data && typeof data === "object" && isPlayerApi(this.url) && shouldStrip()) {
+                        if (sanitizeObject(data, 0)) {
+                            S.stripped++;
+                            S.lastStripAt = Date.now();
+                        }
+                    }
+                } catch { /* ignore */ }
+                return data;
+            };
+        }
+    } catch { /* ignore */ }
 
     // Quét nhanh lúc đầu (player đọc playerResponse rất sớm), sau đó thưa thớt hơn.
     let scans = 0;

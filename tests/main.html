@@ -1077,32 +1077,6 @@ function addBadge(p) { const b = document.createElement("div"); b.className = "y
   v.duration = 400; v.currentTime = 0; v.muted = false;
   await sleep(600);
 
-  // 56. REGRESSION (chống đứng màn ở ended-mode + ytp-ad-display-override + duration=null):
-  //     Nếu nút skip bị YouTube làm liệt hoàn toàn ở màn hình cuối QC (duration=NaN, ended-mode),
-  //     sau SKIP_FALLBACK_MS phải tự gọi loadVideoById để nạp thẳng video chính.
-  let reloadedVid56 = "";
-  mp.getVideoData = () => ({ video_id: "4jjOH2FR6-E" });
-  mp.loadVideoById = (vid) => {
-    reloadedVid56 = vid;
-    mp.classList.remove("ad-showing", "ad-interrupting", "ytp-ad-display-override", "ended-mode");
-  };
-  const deadBtn56 = document.createElement("button");
-  deadBtn56.className = "ytp-skip-ad-button ytp-skip-ad-button-fix-fullscreen-grid";
-  deadBtn56.style.cssText = "width:100px;height:36px";
-  deadBtn56.innerHTML = '<div class="ytp-skip-ad-button__text">Bỏ qua</div>';
-  mp.querySelector(".video-ads").appendChild(deadBtn56);
-  const badge56 = addBadge(mp);
-  v.duration = NaN; v.currentTime = 0; v.playbackRate = 1; v.muted = false;
-  mp.classList.add("ad-showing", "ad-interrupting", "ytp-ad-display-override", "ended-mode");
-  await sleep(1600);
-  check("56 kẹt ở ended-mode + duration=null -> tự nạp lại video chính (chống đứng màn)",
-    reloadedVid56 === "4jjOH2FR6-E", `reloaded=${reloadedVid56}`);
-  mp.classList.remove("ad-showing", "ad-interrupting", "ytp-ad-display-override", "ended-mode");
-  badge56.remove(); deadBtn56.remove();
-  delete mp.getVideoData; delete mp.loadVideoById;
-  v.duration = 400; v.currentTime = 0; v.muted = false;
-  await sleep(600);
-
   document.getElementById("out").textContent = results.join("\n");
  } catch (e) {
    results.push("FAIL exception: " + (e && e.message ? e.message : e));

@@ -441,7 +441,7 @@ confirmResetBtn.addEventListener("click", () => {
         });
         await chrome.storage.local.set({
             adsBlocked: 0,
-            statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0, spotify: 0 },
+            statsBreakdown: { video: 0, banner: 0, overlay: 0, antiAdblock: 0, shopping: 0, spotify: 0 },
             statsHistory: [],
             userStats,
         });

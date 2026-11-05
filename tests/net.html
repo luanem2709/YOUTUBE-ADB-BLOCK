@@ -64,7 +64,7 @@
             // 5. Nhận diện đúng endpoint player
             check("N12 nhận diện /youtubei/v1/player", N.isPlayerApi("https://www.youtube.com/youtubei/v1/player?key=abc") === true);
             check("N13 KHÔNG nhận nhầm endpoint khác",
-                N.isPlayerApi("https://www.youtube.com/youtubei/v1/next") === false &&
+                N.isPlayerApi("https://www.youtube.com/youtubei/v1/next") === true && N.isPlayerApi("https://www.youtube.com/youtubei/v1/reel/reel_item_watch?key=abc") === true &&
                 N.isPlayerApi("https://www.youtube.com/youtubei/v1/browse") === false &&
                 N.isPlayerApi("https://googlevideo.com/videoplayback") === false);
 

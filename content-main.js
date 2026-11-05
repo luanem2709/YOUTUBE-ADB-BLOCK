@@ -476,10 +476,12 @@
         setAdActive(true);
         startFastAdLoop();
         postCount("video");
-        // Thử skip tức thì qua API player (nhanh nhất có thể) — nhưng chỉ 1 lần,
-        // và vẫn giữ đường dự phòng (bấm nút + tua 16x + seek cuối).
+        // Bấm nút Bỏ qua ngay nếu đã có sẵn trong DOM + gọi skipAd() tức thì
+        try { clickSkip(player, st); } catch { /* ignore */ }
+        try { trySkipApi(player, st); } catch { /* ignore */ }
+        // Và gọi bồi thêm 1 lần sau 120ms phòng trường hợp player vừa nạp xong
         setTimeout(() => {
-            try { trySkipApi(player, st); } catch { /* ignore */ }
+            try { if (st.active) trySkipApi(player, st); } catch { /* ignore */ }
         }, 120);
     }
 
@@ -808,6 +810,7 @@
     // Quan sát thực tế: YouTube chèn nút "Bỏ qua" vào DOM sau khi QC đã chạy vài giây.
     // Không có observer này thì phải chờ tới lượt quét 300ms → thấy muộn.
     const adUiObserver = new MutationObserver((mutations) => {
+        if (!adBlockingActive()) return;
         for (let i = 0; i < mutations.length; i++) {
             const added = mutations[i].addedNodes;
             for (let j = 0; j < added.length; j++) {
@@ -815,12 +818,8 @@
                 if (!n || n.nodeType !== 1) continue;
                 const p = mainPlayer();
                 if (!p) continue;
-                // Có thêm node → có thể là nút "Bỏ qua" → xử lý ngay
-                if (isConfirmedAd(p) || hasAdClass(p) || hasAdCreatedClass(p)) {
-                    const st = getState(p);
-                    if (!st.active) enterAd(p, st, playerVideo(p));
-                    handleAd(p, st, playerVideo(p));
-                }
+                // Có thêm node → có thể là nút "Bỏ qua" → xử lý ngay qua processPlayer
+                processPlayer(p);
                 return;
             }
         }
@@ -830,9 +829,10 @@
         if (player.__fgAdUiWatched) return;
         player.__fgAdUiWatched = true;
         try {
-            const zone = player.querySelector(".video-ads, .ytp-ad-module") || player;
-            adUiObserver.observe(zone, { childList: true, subtree: true });
-            adUiZones.set(player, zone);
+            // Quan sát trên toàn bộ player thay vì chỉ .video-ads để bắt được cả nút skip
+            // trong .ytp-video-interstitial-buttoned-centered-layout nằm ngoài .video-ads
+            adUiObserver.observe(player, { childList: true, subtree: true });
+            adUiZones.set(player, player);
         } catch { /* ignore */ }
     }
 

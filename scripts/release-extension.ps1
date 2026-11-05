@@ -49,7 +49,7 @@ $keyPath = Join-Path $root "build\ext.pem"
 
 # --- Cac file/thu muc thuoc extension (KHONG gom installer, scripts, _metadata) ---
 $extFiles = @(
-    "manifest.json", "background.js", "license.js", "content-main.js", "content.js", "content.css",
+    "manifest.json", "background.js", "license.js", "content-yt-net.js", "content-main.js", "content.js", "content.css",
     "content-spotify.js", "content-spotify-main.js", "popup.html", "popup.css", "popup.js",
     "options.html", "options.css", "options.js",
     "stats.html", "stats.css", "stats.js"

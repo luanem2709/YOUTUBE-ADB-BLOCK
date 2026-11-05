@@ -63,6 +63,7 @@
         "*://m.youtube.com/*"
       ],
       "js": [
+        "content-yt-net.js",
         "content-main.js"
       ],
       "world": "MAIN",

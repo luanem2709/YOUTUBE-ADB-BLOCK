@@ -100,30 +100,56 @@
     if (fastPath) markReady();
 
     // ---------- Làm sạch playerResponse ----------
-    // Các mảng chứa slot quảng cáo. Xoá (đặt rỗng) → player không tạo QC nào.
-    const AD_SLOT_KEYS = ["adPlacements", "playerAds", "adSlots", "adBreakHeartbeatParams"];
+    // Các mảng/khóa chứa slot quảng cáo. Xoá (đặt rỗng) → player không tạo QC nào.
+    const AD_SLOT_KEYS = ["adPlacements", "playerAds", "adSlots", "adBreakHeartbeatParams", "adBreakParams"];
+    const SKIP_TRAVERSE_KEYS = new Set([
+        "streamingData", "formats", "adaptiveFormats", "storyboards",
+        "captions", "microformat", "cards", "annotations", "frameworkUpdates",
+    ]);
     // Tên biến chứa playerResponse dạng chuỗi JSON.
     const PLAYER_KEY_RE = /player_?response|playerresponse/i;
+    const origJsonParse = JSON.parse;
+
+    function hasAdKeyword(text) {
+        return typeof text === "string" && (
+            text.indexOf("adPlacements") !== -1 ||
+            text.indexOf("playerAds") !== -1 ||
+            text.indexOf("adSlots") !== -1 ||
+            text.indexOf("adBreakHeartbeatParams") !== -1 ||
+            text.indexOf("adBreakParams") !== -1
+        );
+    }
 
     function sanitizeObject(obj, depth) {
         if (!obj || typeof obj !== "object") return false;
         const d = typeof depth === "number" ? depth : 0;
-        if (d > 3) return false;
+        if (d > 6) return false;
         let changed = false;
+        if (Array.isArray(obj)) {
+            for (let i = 0; i < obj.length; i++) {
+                const item = obj[i];
+                if (item && typeof item === "object") {
+                    if (sanitizeObject(item, d + 1)) changed = true;
+                }
+            }
+            return changed;
+        }
         for (let i = 0; i < AD_SLOT_KEYS.length; i++) {
             const k = AD_SLOT_KEYS[i];
             if (Array.isArray(obj[k]) && obj[k].length) {
                 obj[k] = [];
                 changed = true;
-            } else if (k === "adBreakHeartbeatParams" && obj[k]) {
+            } else if ((k === "adBreakHeartbeatParams" || k === "adBreakParams") && obj[k]) {
                 delete obj[k];
                 changed = true;
             }
         }
-        // playerResponse có thể nằm lồng trong "playerResponse" / "response.playerResponse"
-        const nested = ["playerResponse", "response"];
-        for (let i = 0; i < nested.length; i++) {
-            const child = obj[nested[i]];
+        // Duyệt đệ quy các nhánh con (playlist /next, onResponseReceivedEndpoints, raw_player_response...)
+        // nhưng tuyệt đối bỏ qua streamingData/formats để không chạm vào luồng video chính
+        for (const k in obj) {
+            if (SKIP_TRAVERSE_KEYS.has(k)) continue;
+            if (k === "adPlacements" || k === "playerAds" || k === "adSlots" || k === "adBreakHeartbeatParams" || k === "adBreakParams") continue;
+            const child = obj[k];
             if (child && typeof child === "object") {
                 if (sanitizeObject(child, d + 1)) changed = true;
             }
@@ -133,14 +159,16 @@
 
     function sanitizeText(text) {
         if (typeof text !== "string" || !text) return text;
-        // Phải là JSON object (bắt đầu bằng '{', sau khi bỏ khoảng trắng đầu)
+        // Phải là JSON object hoặc array (bắt đầu bằng '{' hoặc '[', sau khi bỏ khoảng trắng đầu)
         const start = text.search(/\S/);
-        if (start < 0 || text.charCodeAt(start) !== 123) return text; // 123 = '{'
-        if (text.indexOf("adPlacements") === -1 && text.indexOf("playerAds") === -1 && text.indexOf("adSlots") === -1 && text.indexOf("adBreakHeartbeatParams") === -1) {
+        if (start < 0) return text;
+        const ch = text.charCodeAt(start);
+        if (ch !== 123 && ch !== 91) return text; // 123 = '{', 91 = '['
+        if (!hasAdKeyword(text)) {
             return text;
         }
         try {
-            const data = JSON.parse(text);
+            const data = origJsonParse(text);
             if (!sanitizeObject(data, 0)) return text;
             S.stripped++;
             S.lastStripAt = Date.now();
@@ -231,7 +259,7 @@
     }
     function isPlayerApi(url) {
         if (!url) return false;
-        return /\/youtubei\/v1\/(player|reel\/reel_item_watch|next)(\?|$)/.test(url);
+        return /\/youtubei\/v1\/(player(?:\/ad_break)?|ad_break|reel\/reel_item_watch|next)(\?|$)/.test(url);
     }
 
     window.fetch = async function (...args) {
@@ -447,7 +475,8 @@
         });
     } catch { /* ignore */ }
 
-    // Hook Response.prototype.json() để bắt cả trường hợp YouTube gọi res.json() trực tiếp
+    // Hook Response.prototype.json() và JSON.parse() (kế thừa từ v2.3.9) để bắt mọi luồng
+    // YouTube giải mã playerResponse (kể cả qua ReadableStream / ArrayBuffer / playlist / SPA) ở 0ms
     try {
         const origJson = Response.prototype.json;
         if (typeof origJson === "function") {
@@ -464,6 +493,21 @@
                 return data;
             };
         }
+    } catch { /* ignore */ }
+
+    try {
+        JSON.parse = function (text) {
+            const res = origJsonParse.apply(this, arguments);
+            try {
+                if (res && typeof res === "object" && hasAdKeyword(text) && shouldStrip()) {
+                    if (sanitizeObject(res, 0)) {
+                        S.stripped++;
+                        S.lastStripAt = Date.now();
+                    }
+                }
+            } catch { /* ignore */ }
+            return res;
+        };
     } catch { /* ignore */ }
 
     // Quét nhanh lúc đầu (player đọc playerResponse rất sớm), sau đó thưa thớt hơn.

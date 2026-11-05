@@ -470,6 +470,8 @@
         st.skipApiCalled = false;
         st.skipApiAt = 0;
         st.skipApiCount = 0;
+        st.cancelAdCalled = false;
+        st.endedReloaded = false;
         if (video) {
             try { video.style.opacity = "0"; } catch { /* ignore */ }
             if (fgSettings.muteAds && !video.muted) {
@@ -479,9 +481,13 @@
         setAdActive(true);
         startFastAdLoop();
         postCount("video");
-        // Bấm nút Bỏ qua ngay nếu đã có sẵn trong DOM + gọi skipAd() tức thì
+        // Bấm nút Bỏ qua ngay nếu đã có sẵn trong DOM + gọi skipAd() / cancelAd() (1 lần) tức thì
         try { clickSkip(player, st); } catch { /* ignore */ }
         try { trySkipApi(player, st); } catch { /* ignore */ }
+        if (!st.cancelAdCalled && typeof player.cancelAd === "function") {
+            st.cancelAdCalled = true;
+            try { player.cancelAd(); } catch { /* ignore */ }
+        }
         // Và gọi bồi thêm 1 lần sau 120ms phòng trường hợp player vừa nạp xong
         setTimeout(() => {
             try { if (st.active) trySkipApi(player, st); } catch { /* ignore */ }
@@ -499,6 +505,8 @@
         st.skipApiCalled = false;
         st.skipApiAt = 0;
         st.skipApiCount = 0;
+        st.cancelAdCalled = false;
+        st.endedReloaded = false;
         stopFastAdLoop();
         const video = playerVideo(player) || st.video;
         if (video) {
@@ -521,22 +529,106 @@
         }, 400);
     }
 
-    // Dispatch chuỗi sự kiện chuột & pointer đầy đủ — YouTube interstitial bỏ qua .click() đơn thuần.
+    // ---------- Giả lập isTrusted=true cho sự kiện click nút Bỏ qua (kế thừa từ v2.3.9) ----------
+    // YouTube kiểm tra event.isTrusted trên nút .ytp-skip-ad-button / #skip-button:q (nhất là màn hình
+    // interstitial cuối QC ytp-video-interstitial-buttoned-centered-layout).
+    // Chỉ bọc các sự kiện tương tác nút (click/mouse/pointer/touch) — không bọc scroll/mousemove.
+    const trustedListenerMap = new WeakMap();
+    const origAddEL = EventTarget.prototype.addEventListener;
+    const origRemoveEL = EventTarget.prototype.removeEventListener;
+    const TRUST_WRAP_TYPES = new Set([
+        "click", "mousedown", "mouseup",
+        "pointerdown", "pointerup",
+        "touchstart", "touchend",
+    ]);
+
+    function createTrustedEventProxy(event) {
+        return new Proxy(event, {
+            get(target, prop) {
+                if (prop === "isTrusted") return true;
+                const val = Reflect.get(target, prop);
+                return typeof val === "function" ? val.bind(target) : val;
+            },
+        });
+    }
+
+    try {
+        EventTarget.prototype.addEventListener = function (type, listener, options) {
+            if (!listener || !TRUST_WRAP_TYPES.has(type)) {
+                return origAddEL.call(this, type, listener, options);
+            }
+            let wrapped = trustedListenerMap.get(listener);
+            if (!wrapped) {
+                if (typeof listener === "function") {
+                    wrapped = function (event) {
+                        if (event && event.__simulatedTrusted === true) {
+                            return listener.call(this, createTrustedEventProxy(event));
+                        }
+                        return listener.call(this, event);
+                    };
+                    trustedListenerMap.set(listener, wrapped);
+                } else if (typeof listener === "object" && typeof listener.handleEvent === "function") {
+                    wrapped = {
+                        handleEvent(event) {
+                            if (event && event.__simulatedTrusted === true) {
+                                return listener.handleEvent(createTrustedEventProxy(event));
+                            }
+                            return listener.handleEvent(event);
+                        },
+                    };
+                    trustedListenerMap.set(listener, wrapped);
+                } else {
+                    wrapped = listener;
+                }
+            }
+            return origAddEL.call(this, type, wrapped, options);
+        };
+
+        EventTarget.prototype.removeEventListener = function (type, listener, options) {
+            if (!listener || !TRUST_WRAP_TYPES.has(type)) {
+                return origRemoveEL.call(this, type, listener, options);
+            }
+            const wrapped = trustedListenerMap.get(listener) || listener;
+            return origRemoveEL.call(this, type, wrapped, options);
+        };
+    } catch { /* ignore */ }
+
+    // Dispatch chuỗi sự kiện chuột & pointer đầy đủ kèm isTrusted=true + composed=true.
     // CHỈ gửi MỘT sự kiện "click" trên phần tử trong cùng nhất: bấm nút con rồi gọi el.click() sẽ
     // kích hoạt handler 2-4 lần (do event nổi lên nút cha) → spam click & loạt trình duyệt.
     function fireClick(el) {
         const rect = el.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
-        const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
-        try { el.dispatchEvent(new PointerEvent("pointerover", opts)); } catch { /* ignore */ }
-        try { el.dispatchEvent(new MouseEvent("pointerover", opts)); } catch { /* ignore */ }
-        try { el.dispatchEvent(new MouseEvent("mouseover", opts)); } catch { /* ignore */ }
-        try { el.dispatchEvent(new PointerEvent("pointerdown", opts)); } catch { /* ignore */ }
-        try { el.dispatchEvent(new MouseEvent("mousedown", opts)); } catch { /* ignore */ }
-        try { el.dispatchEvent(new PointerEvent("pointerup", opts)); } catch { /* ignore */ }
-        try { el.dispatchEvent(new MouseEvent("mouseup", opts)); } catch { /* ignore */ }
-        try { el.dispatchEvent(new MouseEvent("click", opts)); } catch { /* ignore */ }
+        const baseOpts = {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            view: window,
+            clientX: cx,
+            clientY: cy,
+            screenX: cx,
+            screenY: cy,
+            button: 0,
+            isPrimary: true,
+        };
+        const downOpts = { ...baseOpts, buttons: 1 };
+        const upOpts = { ...baseOpts, buttons: 0 };
+        const send = (Cls, type, opts) => {
+            try {
+                const evt = new Cls(type, opts);
+                Object.defineProperty(evt, "__simulatedTrusted", { value: true });
+                el.dispatchEvent(evt);
+            } catch { /* ignore */ }
+        };
+        send(PointerEvent, "pointerover", upOpts);
+        send(MouseEvent, "pointerover", upOpts);
+        send(MouseEvent, "mouseover", upOpts);
+        send(PointerEvent, "pointerdown", downOpts);
+        send(MouseEvent, "mousedown", downOpts);
+        send(PointerEvent, "pointerup", upOpts);
+        send(MouseEvent, "mouseup", upOpts);
+        send(MouseEvent, "click", upOpts);
     }
 
     function isCtaOrLink(el) {
@@ -735,6 +827,22 @@
             const p = video.play();
             if (p && typeof p.catch === "function") p.catch(() => {});
         }
+        // Chống đứng màn hình ở màn hình cuối QC (ytp-ad-display-override + ended-mode, duration=null):
+        // Khi QC đã chạy hết luồng video (duration=NaN, ended-mode) mà YouTube vẫn kẹt ở thẻ
+        // interstitial sau khi đã bấm nút Bỏ qua (skipFallbackOver), ép player nạp thẳng video chính.
+        if (skipFallbackOver && !st.endedReloaded && !isFinite(dNow) &&
+            (player.classList.contains("ended-mode") || player.classList.contains("ytp-ad-display-override"))) {
+            st.endedReloaded = true;
+            try { if (typeof player.finishAd === "function") player.finishAd(); } catch { /* ignore */ }
+            try { if (typeof player.playVideo === "function") player.playVideo(); } catch { /* ignore */ }
+            try {
+                const vid = (typeof player.getVideoData === "function" && player.getVideoData()?.video_id) ||
+                    new URLSearchParams(location.search).get("v") || "";
+                if (vid && typeof player.loadVideoById === "function") {
+                    player.loadVideoById(vid, 0);
+                }
+            } catch { /* ignore */ }
+        }
     }
 
     // Không có QC mà video bị kẹt ở tốc độ bất thường (>4x, YouTube không cho phép) → chắc chắn là lỗi, khôi phục
@@ -900,7 +1008,7 @@
     }
 
     document.addEventListener("pointerdown", (e) => {
-        if (!e.isTrusted || !e.target || !e.target.closest) return;
+        if (!e.isTrusted || e.__simulatedTrusted || !e.target || !e.target.closest) return;
         if (e.target.closest(".html5-video-player, video, ytd-miniplayer, .ytp-miniplayer-ui")) markUserIntent();
     }, true);
 

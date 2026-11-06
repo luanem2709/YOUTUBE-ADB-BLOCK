@@ -647,14 +647,16 @@ const previewHtml = `<!DOCTYPE html>
                         <div class="player-progress"><div class="player-progress-bar"></div></div>
                     </div>
 
-                    <!-- Thanh Công cụ Nhanh chuẩn App YouTube Gốc ngay dưới video -->
+                    <!-- Thanh Công cụ Nhanh chuẩn App YouTube Premium ngay dưới video -->
                     <div class="ios-action-bar">
+                        <button type="button" class="ios-chip" onclick="document.getElementById('holdPill').textContent='⏭️ Đã nhảy tới đoạn cao trào (Jump Ahead — YouTube Premium)'">⏭️ Đoạn hay nhất</button>
                         <button type="button" class="ios-chip active" onclick="this.classList.toggle('active'); this.textContent=this.classList.contains('active')?'📺 Tự động PiP: BẬT':'📺 Tự động PiP: TẮT'">📺 Tự động PiP: BẬT</button>
                         <button type="button" class="ios-chip" onclick="triggerPiP()">🗗 Mở PiP ngay</button>
                         <button type="button" class="ios-chip" id="demoSpeedChip" onclick="cycleDemoSpeed()">⚡ Tốc độ: 1x</button>
                         <button type="button" class="ios-chip" id="demoAudioChip" onclick="toggleDemoOled()">🎧 Tắt hình (OLED)</button>
+                        <button type="button" class="ios-chip" id="demoSleepChip" onclick="cycleDemoSleep()">🌙 Hẹn giờ: Tắt</button>
                         <button type="button" class="ios-chip" id="demoLoopChip" onclick="this.classList.toggle('active')">🔁 Lặp video</button>
-                        <button type="button" class="ios-chip active">✨ Nét 1080p/4K</button>
+                        <button type="button" class="ios-chip active">✨ 1080p Premium</button>
                         <button type="button" class="ios-chip" onclick="document.getElementById('holdPill').textContent='📤 Đã mở Bảng Chia sẻ Native iOS (AirDrop / Zalo / iMessage)'">📤 Chia sẻ</button>
                     </div>
 
@@ -662,10 +664,10 @@ const previewHtml = `<!DOCTYPE html>
                         <div class="ytm-video-title">Tuyển tập Nhạc Chill Không Quảng Cáo — FUNNYGAME iOS v2.4.15</div>
                         <div class="ytm-meta">1,8 Tr lượt xem · Đã chặn 128 quảng cáo trên iPhone của bạn</div>
                         <div class="ytm-feature-pills">
-                            <span class="ytm-pill active">🛡️ Đã sửa lỗi 282054944</span>
-                            <span class="ytm-pill active">🔒 Khoá màn hình vẫn phát</span>
-                            <span class="ytm-pill active">🎧 Tắt hình tiết kiệm pin OLED</span>
-                            <span class="ytm-pill">⏩ Chạm đúp ±10s &amp; Giữ 2x</span>
+                            <span class="ytm-pill active">⏭️ Nhảy tới đoạn hay nhất</span>
+                            <span class="ytm-pill active">📺 Auto-PiP khi thoát App</span>
+                            <span class="ytm-pill active">🌙 Hẹn giờ tắt (Sleep Timer)</span>
+                            <span class="ytm-pill active">▶️ Tiếp tục xem vị trí đang dở</span>
                         </div>
 
                         <div class="ytm-card">
@@ -686,17 +688,15 @@ const previewHtml = `<!DOCTYPE html>
                     </div>
                 </div>
 
-                <!-- Bảng điều khiển FUNNYGAME (iOS 18 Sheet: Popup / Stats / Options) -->
+                <!-- Bảng điều khiển FUNNYGAME (Gộp toàn bộ Điều khiển & Cài đặt trên 1 màn hình duy nhất) -->
                 <div class="ios-panel-container open" id="panelContainer">
                     <div class="ios-sheet-grabber-row"><div class="ios-sheet-grabber"></div></div>
                     <div class="ios-panel-header">
-                        <img src="${squircleLogoUrl}" style="width:28px;height:28px;border-radius:7px;" alt="FG" />
-                        <div class="ios-seg">
-                            <button type="button" id="segPopup" class="active" onclick="showPanel('popup')">Điều khiển</button>
-                            <button type="button" id="segStats" onclick="showPanel('stats')">Xếp hạng</button>
-                            <button type="button" id="segOptions" onclick="showPanel('options')">Cài đặt</button>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <img src="${squircleLogoUrl}" style="width:28px;height:28px;border-radius:7px;" alt="FG" />
+                            <span style="font-size:15px;font-weight:800;color:#f8fafc;">Bảng điều khiển · Cài đặt</span>
                         </div>
-                        <button type="button" class="ios-close-btn" onclick="closePanel()">Đóng ✕</button>
+                        <button type="button" class="ios-close-btn" onclick="closePanel()">Xong ✕</button>
                     </div>
                     <iframe class="ios-panel-iframe" id="panelFrame"></iframe>
                 </div>
@@ -717,7 +717,7 @@ const previewHtml = `<!DOCTYPE html>
                     <span class="dock-ico">📺</span><span>PiP</span>
                 </button>
                 <button type="button" class="ios-dock-btn active" id="dockShield" onclick="showPanel('popup')">
-                    <span class="dock-ico">🛡️</span><span>Chặn QC</span>
+                    <span class="dock-ico">⚙️</span><span>Cài đặt</span>
                     <span class="ios-dock-badge">128</span>
                 </button>
             </nav>
@@ -729,7 +729,7 @@ const previewHtml = `<!DOCTYPE html>
     <aside class="pc-inspector">
         <div class="pc-card">
             <h2>📱 Bản xem trước FUNNYGAME iOS trên PC</h2>
-            <p>Đã đồng bộ bộ Logo Squircle iPhone mới (xoá dòng chữ <code>COMINGSOON</code> cũ, nhúng trực tiếp Base64 chống lỗi vỡ ảnh trên iOS và căn chỉnh vừa khít thanh đầu trang <code>m.youtube.com</code>).</p>
+            <p>Nút <b>⚙️ Cài đặt</b> ở thanh dưới cùng giờ mở thẳng <b>Bảng điều khiển hợp nhất</b> (gồm cả Công tắc tổng, Thống kê 3 cột và toàn bộ Công tắc bật/tắt tính năng YouTube Premium trên cùng 1 trang cuộn mượt, không còn các thanh tab thừa).</p>
 
             <div class="logo-showcase">
                 <div class="logo-item">
@@ -743,11 +743,9 @@ const previewHtml = `<!DOCTYPE html>
             </div>
 
             <div class="pc-btn-grid">
-                <button class="pc-btn active" id="btnPopup" onclick="showPanel('popup')">🛡️ 1. Bảng Điều khiển (Popup iPhone)</button>
-                <button class="pc-btn" id="btnYt" onclick="closePanel()">▶️ 2. Giao diện YouTube iPhone + Logo</button>
-                <button class="pc-btn" id="btnStats" onclick="showPanel('stats')">🏆 3. Bảng Đua Top &amp; Thống kê</button>
-                <button class="pc-btn" id="btnOptions" onclick="showPanel('options')">⚙️ 4. Cài đặt &amp; Whitelist</button>
-                <button class="pc-btn" id="btnLock" onclick="showPanel('locked')" style="grid-column: 1 / -1;">🔑 5. Xem thử Màn hình Khoá Key (License Gate)</button>
+                <button class="pc-btn active" id="btnPopup" onclick="showPanel('popup')">⚙️ 1. Bảng Điều khiển &amp; Cài đặt hợp nhất</button>
+                <button class="pc-btn" id="btnYt" onclick="closePanel()">▶️ 2. Trình phát YouTube Premium iPhone</button>
+                <button class="pc-btn" id="btnLock" onclick="showPanel('locked')" style="grid-column: 1 / -1;">🔑 3. Xem thử Màn hình Khoá Key (License Gate)</button>
             </div>
         </div>
     </aside>
@@ -780,13 +778,7 @@ const previewHtml = `<!DOCTYPE html>
             document.getElementById("dockYt").classList.remove("active");
             document.getElementById("dockShield").classList.add("active");
 
-            document.getElementById("segPopup").classList.toggle("active", kind === "popup" || kind === "locked");
-            document.getElementById("segStats").classList.toggle("active", kind === "stats");
-            document.getElementById("segOptions").classList.toggle("active", kind === "options");
-
             if (kind === "popup") setActivePcBtn("btnPopup");
-            else if (kind === "stats") setActivePcBtn("btnStats");
-            else if (kind === "options") setActivePcBtn("btnOptions");
             else if (kind === "locked") setActivePcBtn("btnLock");
 
             frame.srcdoc = decodeUtf8Base64(PAGES[kind] || PAGES.popup);
@@ -814,6 +806,19 @@ const previewHtml = `<!DOCTYPE html>
             chip.textContent = "⚡ Tốc độ: " + s + "x";
             chip.classList.toggle("active", s !== 1);
             document.getElementById("holdPill").textContent = "⚡ Đã chuyển tốc độ phát sang " + s + "x";
+        }
+
+        const DEMO_SLEEPS = ["Tắt", "Hết video", "15p", "30p", "60p"];
+        let demoSleepIdx = 0;
+        function cycleDemoSleep() {
+            demoSleepIdx = (demoSleepIdx + 1) % DEMO_SLEEPS.length;
+            const label = DEMO_SLEEPS[demoSleepIdx];
+            const chip = document.getElementById("demoSleepChip");
+            chip.textContent = "🌙 Hẹn giờ: " + label;
+            chip.classList.toggle("active", demoSleepIdx !== 0);
+            document.getElementById("holdPill").textContent = demoSleepIdx === 0
+                ? "🌙 Đã tắt Hẹn giờ đi ngủ"
+                : "🌙 Tự động dừng phát sau: " + label;
         }
 
         let demoOled = false;

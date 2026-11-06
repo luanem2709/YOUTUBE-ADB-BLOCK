@@ -302,7 +302,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     private func buildBootstrapScript(mainUrl: String) -> String {
         let localJson = getStoredJson(storageKeyLocal)
         let sessionJson = getStoredJson(storageKeySession)
-        let logoDataUrl = readResBase64("fg-logo-yt.png", mime: "image/png")
+        var logoDataUrl = readResBase64("fg-logo-ios.png", mime: "image/png")
+        if logoDataUrl.isEmpty {
+            logoDataUrl = readResBase64("fg-logo-yt.png", mime: "image/png")
+        }
+        let ytLogoDataUrl = readResBase64("fg-logo-yt.png", mime: "image/png")
         let iconDataUrl = readResBase64("icon48.png", mime: "image/png")
         let safeMainUrl = mainUrl.replacingOccurrences(of: "\"", with: "\\\"")
         return """
@@ -311,6 +315,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         window.__FG_IOS_VERSION__ = "2.4.15";
         window.__FG_IOS_MAIN_URL__ = "\(safeMainUrl)";
         window.__FG_IOS_LOGO_DATA_URL__ = "\(logoDataUrl)";
+        window.__FG_IOS_YT_LOGO_DATA_URL__ = "\(ytLogoDataUrl)";
         window.__FG_IOS_ICON_DATA_URL__ = "\(iconDataUrl)";
         """
     }
@@ -773,8 +778,18 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         let jsName = cleanPage.replacingOccurrences(of: ".html", with: ".js")
         let cssContent = readResString(cssName) + "\n" + (cleanPage == "popup.html" ? readResString("popup-mobile.css") : "")
         let jsContent = readResString(jsName)
-        let iconData = readResBase64("icon48.png", mime: "image/png")
+        var logoData = readResBase64("fg-logo-ios.png", mime: "image/png")
+        if logoData.isEmpty { logoData = readResBase64("logo.gif", mime: "image/gif") }
+        if logoData.isEmpty { logoData = readResBase64("icon128.png", mime: "image/png") }
+        let iconData = readResBase64("icon48.png", mime: "image/png").isEmpty ? logoData : readResBase64("icon48.png", mime: "image/png")
 
+        html = html.replacingOccurrences(of: "./images/logo.gif", with: logoData)
+        html = html.replacingOccurrences(of: "images/logo.gif", with: logoData)
+        html = html.replacingOccurrences(of: "./images/fg-logo-ios.png", with: logoData)
+        html = html.replacingOccurrences(of: "images/fg-logo-ios.png", with: logoData)
+        html = html.replacingOccurrences(of: "./images/logo.png", with: logoData)
+        html = html.replacingOccurrences(of: "images/logo.png", with: logoData)
+        html = html.replacingOccurrences(of: "images/icon128.png", with: logoData)
         html = html.replacingOccurrences(of: "images/icon48.png", with: iconData)
         html = html.replacingOccurrences(of: "<link rel=\"stylesheet\" href=\"\(cssName)\" />", with: "<style>\(cssContent)</style>")
         html = html.replacingOccurrences(of: "<link rel=\"stylesheet\" href=\"popup-mobile.css\" />", with: "")

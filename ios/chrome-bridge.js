@@ -479,11 +479,63 @@
         }
     `;
 
+    function buildLogoCss() {
+        const logoUrl = window.__FG_IOS_LOGO_DATA_URL__ || window.__FG_IOS_YT_LOGO_DATA_URL__ || "";
+        if (!logoUrl) return "";
+        return `
+        /* Logo FUNNYGAME chuẩn giao diện iPhone cho thanh đầu trang m.youtube.com & www.youtube.com */
+        html.fg-logo-on ytm-mobile-topbar-renderer c3-icon#home-icon svg,
+        html.fg-logo-on ytm-mobile-topbar-renderer .mobile-topbar-logo svg,
+        html.fg-logo-on ytm-logo-entity svg,
+        html.fg-logo-on ytd-topbar-logo-renderer #logo-icon svg,
+        html.fg-logo-on ytd-topbar-logo-renderer #country-code {
+            display: none !important;
+        }
+        html.fg-logo-on ytm-mobile-topbar-renderer c3-icon#home-icon,
+        html.fg-logo-on ytm-mobile-topbar-renderer .mobile-topbar-logo,
+        html.fg-logo-on ytm-logo-entity,
+        html.fg-logo-on ytd-topbar-logo-renderer #logo-icon {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 7px !important;
+            width: auto !important;
+            height: 28px !important;
+            text-decoration: none !important;
+        }
+        html.fg-logo-on ytm-mobile-topbar-renderer c3-icon#home-icon::before,
+        html.fg-logo-on ytm-mobile-topbar-renderer .mobile-topbar-logo::before,
+        html.fg-logo-on ytm-logo-entity::before,
+        html.fg-logo-on ytd-topbar-logo-renderer #logo-icon::before {
+            content: "" !important;
+            display: inline-block !important;
+            width: 26px !important;
+            height: 26px !important;
+            border-radius: 7px !important;
+            background: url("${logoUrl}") center / cover no-repeat !important;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+            flex-shrink: 0 !important;
+        }
+        html.fg-logo-on ytm-mobile-topbar-renderer c3-icon#home-icon::after,
+        html.fg-logo-on ytm-mobile-topbar-renderer .mobile-topbar-logo::after,
+        html.fg-logo-on ytm-logo-entity::after,
+        html.fg-logo-on ytd-topbar-logo-renderer #logo-icon::after {
+            content: "FUNNYGAME" !important;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif !important;
+            font-size: 15.5px !important;
+            font-weight: 800 !important;
+            letter-spacing: -0.02em !important;
+            color: #f8fafc !important;
+            line-height: 1 !important;
+            white-space: nowrap !important;
+        }
+        `;
+    }
+
     function injectIosExtraCss() {
         if (document.getElementById("__fg_ios_extra_css")) return;
         const s = document.createElement("style");
         s.id = "__fg_ios_extra_css";
-        s.textContent = IOS_EXTRA_CSS;
+        s.textContent = IOS_EXTRA_CSS + "\n" + buildLogoCss();
         (document.head || document.documentElement).appendChild(s);
     }
     if (document.head || document.documentElement) injectIosExtraCss();

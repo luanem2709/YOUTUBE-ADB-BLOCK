@@ -37,10 +37,15 @@ body {
 }
 
 .logo {
-    width: 56px;
-    height: 56px;
-    border-radius: 16px;
-    object-fit: contain;
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    padding: 3px;
+    background: linear-gradient(145deg, #0c132c, #05070f);
+    border: 1px solid rgba(96, 165, 250, 0.38);
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+    object-fit: cover;
+    flex-shrink: 0;
 }
 
 .page-header h1 {

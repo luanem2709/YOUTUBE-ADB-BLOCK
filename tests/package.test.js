@@ -9,11 +9,25 @@ const results = [];
 const check = (name, cond, extra) => results.push((cond ? "PASS " : "FAIL ") + name + (extra ? "  [" + extra + "]" : ""));
 
 function listZip(zipPath) {
+    if (process.platform !== "win32") {
+        return execFileSync("unzip", ["-Z1", zipPath], { encoding: "utf8" })
+            .split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    }
     const script = "Add-Type -AssemblyName System.IO.Compression.FileSystem; " +
         "$z=[IO.Compression.ZipFile]::OpenRead('" + zipPath.replace(/'/g, "''") + "'); " +
         "$z.Entries | ForEach-Object { $_.FullName }; $z.Dispose()";
     return execFileSync("powershell", ["-NoProfile", "-Command", script], { encoding: "utf8" })
         .split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+}
+
+function readZipEntry(zipPath, entryName) {
+    if (process.platform !== "win32") {
+        return execFileSync("unzip", ["-p", zipPath, entryName], { encoding: "utf8" });
+    }
+    const script = "Add-Type -AssemblyName System.IO.Compression.FileSystem; " +
+        "$z=[IO.Compression.ZipFile]::OpenRead('" + zipPath.replace(/'/g, "''") + "'); " +
+        "$e=$z.GetEntry('" + entryName.replace(/'/g, "''") + "'); if($e){$r=New-Object IO.StreamReader($e.Open()); $r.ReadToEnd()}; $z.Dispose()";
+    return execFileSync("powershell", ["-NoProfile", "-Command", script], { encoding: "utf8" });
 }
 
 const pkgVersion = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8")).version;
@@ -53,10 +67,7 @@ for (const z of zips) {
 
     const manifestEntry = names.find((n) => n === "manifest.json");
     if (manifestEntry) {
-        const script = "Add-Type -AssemblyName System.IO.Compression.FileSystem; " +
-            "$z=[IO.Compression.ZipFile]::OpenRead('" + path.join(dist, z).replace(/'/g, "''") + "'); " +
-            "$e=$z.GetEntry('manifest.json'); $r=New-Object IO.StreamReader($e.Open()); $r.ReadToEnd(); $z.Dispose()";
-        const json = execFileSync("powershell", ["-NoProfile", "-Command", script], { encoding: "utf8" });
+        const json = readZipEntry(path.join(dist, z), "manifest.json");
         let m = null;
         try { m = JSON.parse(json); } catch { /* ignore */ }
         check("B4 " + z + " — manifest hop le", !!m && m.manifest_version === 3, m ? "v" + m.version : "khong parse duoc");
@@ -68,10 +79,7 @@ for (const z of zips) {
 for (const z of zips) {
     const names = listZip(path.join(dist, z)).map((f) => f.replace(/\\/g, "/"));
     if (!names.some((n) => n.endsWith("stats.js"))) continue;
-    const script = "Add-Type -AssemblyName System.IO.Compression.FileSystem; " +
-        "$z=[IO.Compression.ZipFile]::OpenRead('" + path.join(dist, z).replace(/'/g, "''") + "'); " +
-        "$e=$z.GetEntry('stats.js'); if($e){$r=New-Object IO.StreamReader($e.Open()); $r.ReadToEnd()}; $z.Dispose()";
-    const src = execFileSync("powershell", ["-NoProfile", "-Command", script], { encoding: "utf8" });
+    const src = readZipEntry(path.join(dist, z), "stats.js");
     // previewData() phai duoc guard bang ?preview
     const guarded = /has\(\"preview\"\)|has\('preview'\)/.test(src) &&
         /render\(previewData\(\)\)/.test(src);

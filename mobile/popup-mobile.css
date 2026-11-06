@@ -52,8 +52,28 @@ body {
     border-radius: 10px;
 }
 
+/* Gộp Tổng quan + Toàn bộ công tắc Cài đặt lên cùng 1 Bảng điều khiển duy nhất trên điện thoại,
+   ẩn thanh tab phụ bên dưới để thao tác bật/tắt quảng cáo & tính năng YouTube Premium ngay lập tức */
+.shell:not(.locked) #panel-overview,
+.shell:not(.locked) #panel-settings {
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.shell:not(.locked) #panel-about,
+.dock-nav,
+#openYoutubeBtn,
+#openStatsBtn,
+#openOptionsBtn {
+    display: none !important;
+}
+
 .content {
-    padding-bottom: 92px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 28px !important;
     -webkit-overflow-scrolling: touch;
 }
 

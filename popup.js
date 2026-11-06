@@ -14,6 +14,9 @@ const DEFAULT_SETTINGS = {
     videoQuality: "auto",
     sponsorBlock: true,
     jumpAhead: true,
+    smartResume: true,
+    swipeControls: true,
+    volumeBoost: true,
     ambientGlow: true,
     customLogo: true,
 };
@@ -63,6 +66,9 @@ const settingInputs = {
     videoQuality: $("videoQuality"),
     jumpAhead: $("jumpAhead"),
     sponsorBlock: $("sponsorBlock"),
+    smartResume: $("smartResume"),
+    swipeControls: $("swipeControls"),
+    volumeBoost: $("volumeBoost"),
     ambientGlow: $("ambientGlow"),
     customLogo: $("customLogo"),
 };

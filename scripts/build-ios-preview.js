@@ -653,8 +653,10 @@ const previewHtml = `<!DOCTYPE html>
                         <button type="button" class="ios-chip active" onclick="this.classList.toggle('active'); this.textContent=this.classList.contains('active')?'📺 Tự động PiP: BẬT':'📺 Tự động PiP: TẮT'">📺 Tự động PiP: BẬT</button>
                         <button type="button" class="ios-chip" onclick="triggerPiP()">🗗 Mở PiP ngay</button>
                         <button type="button" class="ios-chip" id="demoSpeedChip" onclick="cycleDemoSpeed()">⚡ Tốc độ: 1x</button>
+                        <button type="button" class="ios-chip" id="demoBoostChip" onclick="cycleDemoBoost()">🔊 Tăng âm: 100%</button>
                         <button type="button" class="ios-chip" id="demoAudioChip" onclick="toggleDemoOled()">🎧 Tắt hình (OLED)</button>
                         <button type="button" class="ios-chip" id="demoSleepChip" onclick="cycleDemoSleep()">🌙 Hẹn giờ: Tắt</button>
+                        <button type="button" class="ios-chip" onclick="document.getElementById('holdPill').textContent='📸 Đã chụp khung hình gốc nét cao & mở bảng Lưu vào Ảnh iPhone'">📸 Chụp khung hình</button>
                         <button type="button" class="ios-chip" id="demoLoopChip" onclick="this.classList.toggle('active')">🔁 Lặp video</button>
                         <button type="button" class="ios-chip active">✨ 1080p Premium</button>
                         <button type="button" class="ios-chip" onclick="document.getElementById('holdPill').textContent='📤 Đã mở Bảng Chia sẻ Native iOS (AirDrop / Zalo / iMessage)'">📤 Chia sẻ</button>
@@ -668,6 +670,9 @@ const previewHtml = `<!DOCTYPE html>
                             <span class="ytm-pill active">📺 Auto-PiP khi thoát App</span>
                             <span class="ytm-pill active">🌙 Hẹn giờ tắt (Sleep Timer)</span>
                             <span class="ytm-pill active">▶️ Tiếp tục xem vị trí đang dở</span>
+                            <span class="ytm-pill active">☀️ Vuốt Cạnh chỉnh Sáng &amp; Âm lượng</span>
+                            <span class="ytm-pill active">🔊 Khuếch đại âm lượng 200%</span>
+                            <span class="ytm-pill active">📸 Chụp ảnh khung hình Video</span>
                         </div>
 
                         <div class="ytm-card">
@@ -806,6 +811,17 @@ const previewHtml = `<!DOCTYPE html>
             chip.textContent = "⚡ Tốc độ: " + s + "x";
             chip.classList.toggle("active", s !== 1);
             document.getElementById("holdPill").textContent = "⚡ Đã chuyển tốc độ phát sang " + s + "x";
+        }
+
+        const DEMO_BOOSTS = [100, 150, 200];
+        let demoBoostIdx = 0;
+        function cycleDemoBoost() {
+            demoBoostIdx = (demoBoostIdx + 1) % DEMO_BOOSTS.length;
+            const b = DEMO_BOOSTS[demoBoostIdx];
+            const chip = document.getElementById("demoBoostChip");
+            chip.textContent = "🔊 Tăng âm: " + b + "%";
+            chip.classList.toggle("active", b > 100);
+            document.getElementById("holdPill").textContent = "🔊 Đã khuếch đại âm lượng (WebAudio GainNode): " + b + "%";
         }
 
         const DEMO_SLEEPS = ["Tắt", "Hết video", "15p", "30p", "60p"];

@@ -1,5 +1,5 @@
-// FUNNYGAME — Cầu nối WebExtension API (chrome.*) cho ứng dụng iOS độc lập (WKWebView)
-// Đồng bộ trực tiếp với UserDefaults trên iOS thông qua window.webkit.messageHandlers.fgBridge.
+// FUNNYGAME — Cầu nối WebExtension API (chrome.*) & Bộ nâng cấp iOS chuyên sâu (WKWebView)
+// Đồng bộ trực tiếp với UserDefaults, UIPasteboard, MPNowPlayingInfoCenter & PiP trên iOS.
 (function () {
     if (window.__fgIosBridgeReady) return;
     window.__fgIosBridgeReady = true;
@@ -90,6 +90,13 @@
         if (!changes || !Object.keys(changes).length) return;
         for (const fn of storageListeners) {
             try { fn(clone(changes), area); } catch { /* ignore */ }
+        }
+        if (area === "local" && ("adsBlocked" in changes || "enabled" in changes)) {
+            postNative({
+                action: "updateBadge",
+                adsBlocked: Number(localStore.adsBlocked || 0),
+                enabled: localStore.enabled !== false,
+            });
         }
     }
 
@@ -340,4 +347,259 @@
             return I18N_MAP[key] || "";
         },
     };
+
+    // ---------- Hỗ trợ Clipboard qua UIPasteboard gốc của iOS ----------
+    try {
+        const origWriteText = navigator.clipboard && navigator.clipboard.writeText
+            ? navigator.clipboard.writeText.bind(navigator.clipboard)
+            : null;
+        const writeClipboard = async (text) => {
+            postNative({ action: "copyClipboard", text: String(text || "") });
+            if (origWriteText) {
+                try { await origWriteText(text); } catch { /* ignore */ }
+            }
+        };
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText = writeClipboard;
+        } else {
+            Object.defineProperty(navigator, "clipboard", {
+                configurable: true,
+                value: { writeText: writeClipboard },
+            });
+        }
+    } catch { /* ignore */ }
+
+    // ---------- Hàm điều khiển Picture-in-Picture (PiP) & Media từ thanh Native iOS ----------
+    window.__fgTogglePiP = function () {
+        try {
+            const videos = [...document.querySelectorAll("video")];
+            const v = videos.find((el) => el.readyState >= 1 && (el.offsetWidth > 0 || el.offsetHeight > 0)) || videos[0];
+            if (!v) return "no-video";
+            if (typeof v.webkitSupportsPresentationMode === "function" && typeof v.webkitSetPresentationMode === "function") {
+                const cur = v.webkitPresentationMode;
+                const next = cur === "picture-in-picture" ? "inline" : "picture-in-picture";
+                v.webkitSetPresentationMode(next);
+                return next;
+            }
+            if (document.pictureInPictureElement) {
+                document.exitPictureInPicture();
+                return "inline";
+            }
+            if (typeof v.requestPictureInPicture === "function") {
+                v.requestPictureInPicture();
+                return "picture-in-picture";
+            }
+        } catch { /* ignore */ }
+        return "unsupported";
+    };
+
+    window.__fgRemoteCommand = function (cmd, value) {
+        try {
+            const v = document.querySelector("video.html5-main-video, video, audio");
+            if (!v) return;
+            if (cmd === "play") v.play().catch(() => {});
+            else if (cmd === "pause") v.pause();
+            else if (cmd === "toggle") {
+                if (v.paused) v.play().catch(() => {});
+                else v.pause();
+            } else if (cmd === "seek" && typeof value === "number" && isFinite(value)) {
+                v.currentTime = Math.max(0, v.currentTime + value);
+            } else if (cmd === "seekTo" && typeof value === "number" && isFinite(value)) {
+                v.currentTime = Math.max(0, value);
+            } else if (cmd === "next") {
+                const nextBtn = document.querySelector(
+                    ".ytp-next-button, button[aria-label*='Next'], button[aria-label*='Tiếp'], [data-testid='control-button-skip-forward']"
+                );
+                if (nextBtn) nextBtn.click();
+            } else if (cmd === "prev") {
+                const prevBtn = document.querySelector(
+                    ".ytp-prev-button, button[aria-label*='Previous'], [data-testid='control-button-skip-back']"
+                );
+                if (prevBtn) prevBtn.click();
+            }
+        } catch { /* ignore */ }
+    };
+
+    // ---------- Bộ nâng cấp giao diện & cử chỉ iOS cho YouTube / YT Music / Spotify ----------
+    if (!/youtube\.com|spotify\.com/i.test(location.hostname)) return;
+
+    const IOS_EXTRA_CSS = `
+        /* Ẩn nút "Chặn QC" nổi trên web vì đã có thanh Dock Native của App iOS ở dưới cùng */
+        #fg-mobile-open {
+            display: none !important;
+        }
+        /* Ẩn triệt để mọi banner thúc ép mở App YouTube / Spotify gốc trên iOS */
+        ytm-mealbar-promo-renderer,
+        ytm-app-promo-banner-renderer,
+        ytm-Clarification-renderer,
+        ytm-statement-banner-renderer,
+        .mobile-topbar-header-open-app,
+        a[href^="vnd.youtube://"],
+        a[href^="youtube://"],
+        a[href*="itms-apps://"],
+        [data-testid="open-in-app"],
+        [data-testid="smart-banner"],
+        .smartbanner {
+            display: none !important;
+        }
+        /* Ẩn sạch các slot quảng cáo đặc thù của giao diện di động m.youtube.com */
+        html.fg-block-banner ytm-promoted-sparkles-web-renderer,
+        html.fg-block-banner ytm-promoted-video-renderer,
+        html.fg-block-banner ytm-companion-ad-renderer,
+        html.fg-block-banner ytm-ad-slot-renderer,
+        html.fg-block-banner ytm-in-feed-ad-layout-renderer,
+        html.fg-block-banner ytm-rich-item-renderer:has(ytm-ad-slot-renderer),
+        html.fg-block-banner ytm-reel-item-renderer:has(ytm-ad-slot-renderer) {
+            display: none !important;
+        }
+        /* Nhãn báo Nhấn giữ 2x Speed kiểu YouTube Premium */
+        #__fg_hold_2x_badge {
+            position: fixed;
+            top: calc(env(safe-area-inset-top, 12px) + 14px);
+            left: 50%;
+            transform: translateX(-50%) scale(0.92);
+            z-index: 2147483646;
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: rgba(15, 15, 20, 0.85);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            color: #fff;
+            font: 700 13px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
+            letter-spacing: 0.02em;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease, transform 0.15s ease;
+        }
+        #__fg_hold_2x_badge.fg-show {
+            opacity: 1;
+            transform: translateX(-50%) scale(1);
+        }
+    `;
+
+    function injectIosExtraCss() {
+        if (document.getElementById("__fg_ios_extra_css")) return;
+        const s = document.createElement("style");
+        s.id = "__fg_ios_extra_css";
+        s.textContent = IOS_EXTRA_CSS;
+        (document.head || document.documentElement).appendChild(s);
+    }
+    if (document.head || document.documentElement) injectIosExtraCss();
+    else document.addEventListener("DOMContentLoaded", injectIosExtraCss, { once: true });
+
+    // ---------- Nhấn giữ màn hình video để phát tốc độ 2x (Hold for 2x Speed) ----------
+    let holdTimer = null;
+    let holdActive = false;
+    let savedHoldRate = 1;
+    let holdVideo = null;
+    let startX = 0;
+    let startY = 0;
+
+    function showHoldBadge(on) {
+        let badge = document.getElementById("__fg_hold_2x_badge");
+        if (!badge && on && document.body) {
+            badge = document.createElement("div");
+            badge.id = "__fg_hold_2x_badge";
+            badge.textContent = "⏩ Đang phát 2x";
+            document.body.appendChild(badge);
+        }
+        if (badge) badge.classList.toggle("fg-show", !!on);
+    }
+
+    function endHold2x() {
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+        if (!holdActive) return;
+        holdActive = false;
+        if (holdVideo && holdVideo.playbackRate === 2) {
+            try { holdVideo.playbackRate = savedHoldRate; } catch { /* ignore */ }
+        }
+        holdVideo = null;
+        showHoldBadge(false);
+    }
+
+    document.addEventListener("touchstart", (e) => {
+        if (!e.touches || e.touches.length !== 1) {
+            endHold2x();
+            return;
+        }
+        const t = e.target;
+        if (!t || !t.closest) return;
+        // Không kích hoạt khi đang chạm vào nút bấm hoặc thanh tua
+        if (t.closest("button, a, input, [role='button'], [role='slider'], .ytp-chrome-bottom, ytm-custom-control")) return;
+        const player = t.closest("#movie_player, .html5-video-player, #player-container-id, ytm-player");
+        if (!player) return;
+        if (player.classList && (player.classList.contains("ad-showing") || player.classList.contains("ad-interrupting"))) return;
+        const v = player.querySelector("video") || document.querySelector("video");
+        if (!v || v.paused || v.playbackRate > 3) return;
+
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        if (holdTimer) clearTimeout(holdTimer);
+        holdTimer = setTimeout(() => {
+            if (!v || v.paused) return;
+            savedHoldRate = (v.playbackRate > 0 && v.playbackRate <= 4) ? v.playbackRate : 1;
+            holdVideo = v;
+            holdActive = true;
+            try { v.playbackRate = 2; } catch { /* ignore */ }
+            showHoldBadge(true);
+            postNative({ action: "haptic", style: "light" });
+        }, 420);
+    }, { passive: true });
+
+    document.addEventListener("touchmove", (e) => {
+        if (!holdTimer && !holdActive) return;
+        if (!e.touches || !e.touches.length) return;
+        const dx = Math.abs(e.touches[0].clientX - startX);
+        const dy = Math.abs(e.touches[0].clientY - startY);
+        if (dx > 18 || dy > 18) endHold2x();
+    }, { passive: true });
+
+    document.addEventListener("touchend", endHold2x, { passive: true });
+    document.addEventListener("touchcancel", endHold2x, { passive: true });
+
+    // ---------- Đồng bộ thông tin bài hát/video sang Màn hình khoá iOS (Now Playing) ----------
+    let lastMetaAt = 0;
+    function syncNowPlaying() {
+        const now = Date.now();
+        if (now - lastMetaAt < 1800) return;
+        const v = document.querySelector("video.html5-main-video, video, audio");
+        if (!v || !isFinite(v.duration) || v.duration <= 0) return;
+        lastMetaAt = now;
+
+        let title = document.title.replace(/\s*-\s*YouTube(\s*Music)?$/i, "").trim();
+        let artist = location.hostname.replace(/^m\.|^www\./, "");
+        try {
+            if (navigator.mediaSession && navigator.mediaSession.metadata) {
+                title = navigator.mediaSession.metadata.title || title;
+                artist = navigator.mediaSession.metadata.artist || artist;
+            } else {
+                const titleEl = document.querySelector(
+                    "h1.ytd-watch-metadata, .slim-video-information-title, ytmusic-player-bar .title"
+                );
+                const ownerEl = document.querySelector(
+                    "ytd-watch-metadata #channel-name, .slim-owner-icon-and-title .subhead, ytmusic-player-bar .byline"
+                );
+                if (titleEl && titleEl.textContent.trim()) title = titleEl.textContent.trim();
+                if (ownerEl && ownerEl.textContent.trim()) artist = ownerEl.textContent.trim();
+            }
+        } catch { /* ignore */ }
+
+        postNative({
+            action: "nowPlaying",
+            title: title || "FUNNYGAME",
+            artist: artist || "YouTube",
+            duration: Number(v.duration) || 0,
+            currentTime: Number(v.currentTime) || 0,
+            rate: v.paused ? 0 : (Number(v.playbackRate) || 1),
+        });
+    }
+
+    document.addEventListener("play", syncNowPlaying, true);
+    document.addEventListener("pause", syncNowPlaying, true);
+    document.addEventListener("timeupdate", syncNowPlaying, true);
 })();

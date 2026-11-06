@@ -1512,18 +1512,21 @@
     function jumpAhead() {
         const player = mainPlayer();
         const video = playerVideo(player);
-        if (!player || !video || hasAdClass(player)) return;
+        if (!player || !video || hasAdClass(player)) return null;
         const target = pickJumpTarget(getHeatMarkers(player, video), video.currentTime, video.duration);
         if (!target) {
             showPlayerToast("Video này chưa có dữ liệu đoạn hay nhất");
-            return;
+            return null;
         }
         try {
             if (typeof player.seekTo === "function") player.seekTo(target.t, true);
             else video.currentTime = target.t;
         } catch { video.currentTime = target.t; }
-        showPlayerToast("Đã nhảy tới đoạn được xem nhiều nhất · " + fmtTime(target.t));
+        const msg = "Đã nhảy tới đoạn được xem nhiều nhất · " + fmtTime(target.t);
+        showPlayerToast(msg);
+        return msg;
     }
+    window.__fgJumpAhead = jumpAhead;
 
     function buildJumpButton() {
         const btn = document.createElement("button");

@@ -491,7 +491,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             ("waveform.circle.fill", "YT Music", #selector(onTapMusic)),
             ("headphones", "Spotify", #selector(onTapSpotify)),
             ("pip.enter", "PiP", #selector(onTapPiP)),
-            ("shield.lefthalf.filled", "Chặn QC", #selector(onTapPanel)),
+            ("gearshape.fill", "Cài đặt", #selector(onTapPanel)),
         ]
 
         let activeColor = UIColor(red: 1.0, green: 0.27, blue: 0.35, alpha: 1.0)
@@ -949,22 +949,21 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             }
             header.addSubview(logoImgView)
 
-            let seg = UISegmentedControl(items: ["Điều khiển", "Xếp hạng", "Cài đặt"])
-            seg.translatesAutoresizingMaskIntoConstraints = false
-            seg.selectedSegmentIndex = 0
-            seg.selectedSegmentTintColor = UIColor(red: 1.0, green: 0.26, blue: 0.34, alpha: 1.0)
-            seg.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 12.0, weight: .semibold)], for: .normal)
-            seg.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 12.0, weight: .bold)], for: .selected)
-            seg.addTarget(self, action: #selector(onPanelSegmentChanged(_:)), for: .valueChanged)
+            // Tiêu đề Bảng điều khiển Cài đặt gọn gàng (chỉ hiển thị Bảng điều khiển chính)
+            let sheetTitle = UILabel()
+            sheetTitle.translatesAutoresizingMaskIntoConstraints = false
+            sheetTitle.text = "Bảng điều khiển · Cài đặt"
+            sheetTitle.font = UIFont.systemFont(ofSize: 15.0, weight: .bold)
+            sheetTitle.textColor = .white
 
             let closeBtn = UIButton(type: .system)
             closeBtn.translatesAutoresizingMaskIntoConstraints = false
-            closeBtn.setTitle("Đóng ✕", for: .normal)
-            closeBtn.titleLabel?.font = UIFont.systemFont(ofSize: 13.0, weight: .bold)
-            closeBtn.setTitleColor(UIColor(red: 1.0, green: 0.35, blue: 0.4, alpha: 1.0), for: .normal)
+            closeBtn.setTitle("Xong ✕", for: .normal)
+            closeBtn.titleLabel?.font = UIFont.systemFont(ofSize: 13.5, weight: .bold)
+            closeBtn.setTitleColor(UIColor(red: 0.38, green: 0.65, blue: 0.98, alpha: 1.0), for: .normal)
             closeBtn.addTarget(self, action: #selector(onClosePanelTapped), for: .touchUpInside)
 
-            header.addSubview(seg)
+            header.addSubview(sheetTitle)
             header.addSubview(closeBtn)
 
             // Hỗ trợ vuốt xuống thanh Header để đóng Sheet như App iOS gốc
@@ -991,20 +990,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
                 header.topAnchor.constraint(equalTo: container.topAnchor),
                 header.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 header.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                header.heightAnchor.constraint(equalToConstant: 56),
+                header.heightAnchor.constraint(equalToConstant: 54),
                 grabber.topAnchor.constraint(equalTo: header.topAnchor, constant: 6),
                 grabber.centerXAnchor.constraint(equalTo: header.centerXAnchor),
                 grabber.widthAnchor.constraint(equalToConstant: 38),
                 grabber.heightAnchor.constraint(equalToConstant: 5),
-                logoImgView.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 12),
+                logoImgView.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 14),
                 logoImgView.bottomAnchor.constraint(equalTo: header.bottomAnchor, constant: -9),
-                logoImgView.widthAnchor.constraint(equalToConstant: 28),
-                logoImgView.heightAnchor.constraint(equalToConstant: 28),
-                seg.centerYAnchor.constraint(equalTo: logoImgView.centerYAnchor),
-                seg.leadingAnchor.constraint(equalTo: logoImgView.trailingAnchor, constant: 8),
-                seg.trailingAnchor.constraint(lessThanOrEqualTo: closeBtn.leadingAnchor, constant: -8),
+                logoImgView.widthAnchor.constraint(equalToConstant: 26),
+                logoImgView.heightAnchor.constraint(equalToConstant: 26),
+                sheetTitle.centerYAnchor.constraint(equalTo: logoImgView.centerYAnchor),
+                sheetTitle.leadingAnchor.constraint(equalTo: logoImgView.trailingAnchor, constant: 10),
+                sheetTitle.trailingAnchor.constraint(lessThanOrEqualTo: closeBtn.leadingAnchor, constant: -8),
                 closeBtn.centerYAnchor.constraint(equalTo: logoImgView.centerYAnchor),
-                closeBtn.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -12),
+                closeBtn.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -14),
                 pWeb.topAnchor.constraint(equalTo: header.bottomAnchor),
                 pWeb.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 pWeb.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -1013,24 +1012,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
             panelContainer = container
             panelWebView = pWeb
-            panelSegment = seg
-        }
-
-        if page.contains("stats") {
-            panelSegment?.selectedSegmentIndex = 1
-        } else if page.contains("options") {
-            panelSegment?.selectedSegmentIndex = 2
-        } else {
-            panelSegment?.selectedSegmentIndex = 0
         }
 
         let wasHidden = panelContainer?.isHidden ?? false
         panelContainer?.isHidden = false
 
-        // Chỉ nạp lại HTML khi đổi tab con (Điều khiển / Xếp hạng / Cài đặt) để mở Sheet trong 0ms không giật
-        if currentPanelPage != page {
-            currentPanelPage = page
-            let html = buildPanelHtml(page: page)
+        // Luôn nạp Bảng điều khiển chính (popup.html) một lần duy nhất để mở tức thì (0ms)
+        if currentPanelPage != "popup.html" {
+            currentPanelPage = "popup.html"
+            let html = buildPanelHtml(page: "popup.html")
             panelWebView?.loadHTMLString(html, baseURL: URL(string: "https://m.youtube.com/funnygame-panel"))
         }
 
@@ -1062,13 +1052,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         default:
             break
         }
-    }
-
-    @objc private func onPanelSegmentChanged(_ sender: UISegmentedControl) {
-        triggerHaptic(style: .light)
-        let pages = ["popup.html", "stats.html", "options.html"]
-        let idx = max(0, min(sender.selectedSegmentIndex, pages.count - 1))
-        openPanel(page: pages[idx])
     }
 
     @objc private func onClosePanelTapped() {

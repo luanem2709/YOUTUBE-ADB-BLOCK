@@ -1119,6 +1119,25 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
                 triggerHaptic(style: .light)
                 showToast(text)
             }
+        case "setBrightness":
+            if let val = body["value"] as? Double {
+                UIScreen.main.brightness = CGFloat(max(0.05, min(1.0, val)))
+            }
+        case "shareImage":
+            if let dataUrl = body["dataUrl"] as? String,
+               let commaIdx = dataUrl.firstIndex(of: ",") {
+                let b64 = String(dataUrl[dataUrl.index(after: commaIdx)...])
+                if let imgData = Data(base64Encoded: b64),
+                   let img = UIImage(data: imgData) {
+                    triggerHaptic(style: .medium)
+                    let avc = UIActivityViewController(activityItems: [img], applicationActivities: nil)
+                    if let pop = avc.popoverPresentationController {
+                        pop.sourceView = self.view
+                        pop.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 1, height: 1)
+                    }
+                    self.present(avc, animated: true, completion: nil)
+                }
+            }
         case "shareUrl":
             let urlStr = (body["url"] as? String) ?? (currentWebView()?.url?.absoluteString ?? "https://m.youtube.com")
             let title = (body["title"] as? String) ?? "FUNNYGAME iOS"

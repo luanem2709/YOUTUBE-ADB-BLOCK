@@ -364,20 +364,39 @@ const previewHtml = `<!DOCTYPE html>
             flex-shrink: 0;
             border: 1px solid rgba(96, 165, 250, 0.25);
         }
-        /* Khung Bảng điều khiển Native iOS (Popup / Stats / Options) */
+        /* Khung Bảng điều khiển Native iOS 18 Sheet (Popup / Stats / Options) */
         .ios-panel-container {
             position: absolute;
-            inset: 0;
+            top: 6px;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background: #06070d;
+            border-radius: 24px 24px 0 0;
+            border-top: 0.5px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 0 -10px 35px rgba(0, 0, 0, 0.65);
             display: none;
             flex-direction: column;
             z-index: 10;
+            overflow: hidden;
         }
         .ios-panel-container.open {
             display: flex;
         }
+        .ios-sheet-grabber-row {
+            background: #141622;
+            padding-top: 6px;
+            display: flex;
+            justify-content: center;
+        }
+        .ios-sheet-grabber {
+            width: 38px;
+            height: 5px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.28);
+        }
         .ios-panel-header {
-            height: 48px;
+            height: 44px;
             padding: 0 12px;
             background: #141622;
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -386,6 +405,34 @@ const previewHtml = `<!DOCTYPE html>
             justify-content: space-between;
             gap: 8px;
             flex-shrink: 0;
+        }
+        .ios-action-bar {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 8px 12px;
+            overflow-x: auto;
+            scrollbar-width: none;
+            background: rgba(10, 12, 20, 0.96);
+            border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+            flex-shrink: 0;
+        }
+        .ios-action-bar::-webkit-scrollbar { display: none; }
+        .ios-chip {
+            padding: 6px 11px;
+            border-radius: 999px;
+            border: 0.5px solid rgba(255, 255, 255, 0.14);
+            background: rgba(255, 255, 255, 0.07);
+            color: #f8fafc;
+            font-size: 11.5px;
+            font-weight: 600;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .ios-chip.active {
+            background: rgba(37, 99, 235, 0.28);
+            border-color: rgba(96, 165, 250, 0.55);
+            color: #93c5fd;
         }
         .ios-seg {
             display: flex;
@@ -440,18 +487,24 @@ const previewHtml = `<!DOCTYPE html>
         .ios-dock-btn {
             border: none;
             background: transparent;
-            color: #c7d0dc;
-            font-size: 11.5px;
+            color: #b8c2d0;
+            font-size: 10.5px;
             font-weight: 600;
             height: 100%;
             cursor: pointer;
             position: relative;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
+            gap: 2px;
+        }
+        .ios-dock-btn .dock-ico {
+            font-size: 16px;
+            line-height: 1;
         }
         .ios-dock-btn.active {
-            color: #ff4d5e;
+            color: #ff4757;
             font-weight: 700;
         }
         .ios-dock-badge {
@@ -586,12 +639,22 @@ const previewHtml = `<!DOCTYPE html>
                         </div>
                     </header>
 
-                    <div class="ytm-player" id="demoPlayer">
-                        <div class="hold-pill" id="holdPill">⏩ Nhấn giữ màn hình: Phát 2x · Chặn QC 0ms</div>
-                        <img src="${squircleLogoUrl}" class="player-center-logo" alt="FG" />
-                        <div class="player-caption">Trình phát YouTube iOS không quảng cáo</div>
-                        <div class="player-sub">Phát nhạc tắt màn hình · PiP · SponsorBlock</div>
+                    <div class="ytm-player" id="demoPlayer" ondblclick="onDemoDoubleTap(event)">
+                        <div class="hold-pill" id="holdPill">⏩ Chạm đúp Trái/Phải: ±10s · Nhấn giữ: 2x · Vuốt lên: Fullscreen</div>
+                        <img src="${squircleLogoUrl}" class="player-center-logo" alt="FG" id="demoPlayerLogo" />
+                        <div class="player-caption" id="demoPlayerCaption">Trình phát YouTube iOS không quảng cáo</div>
+                        <div class="player-sub" id="demoPlayerSub">Phát nhạc tắt màn hình · PiP · Tắt hình tiết kiệm pin OLED</div>
                         <div class="player-progress"><div class="player-progress-bar"></div></div>
+                    </div>
+
+                    <!-- Thanh Công cụ Nhanh chuẩn App YouTube Gốc ngay dưới video -->
+                    <div class="ios-action-bar">
+                        <button type="button" class="ios-chip" onclick="triggerPiP()">📺 Hình-trong-hình</button>
+                        <button type="button" class="ios-chip" id="demoSpeedChip" onclick="cycleDemoSpeed()">⚡ Tốc độ: 1x</button>
+                        <button type="button" class="ios-chip" id="demoAudioChip" onclick="toggleDemoOled()">🎧 Tắt hình (OLED)</button>
+                        <button type="button" class="ios-chip" id="demoLoopChip" onclick="this.classList.toggle('active')">🔁 Lặp video</button>
+                        <button type="button" class="ios-chip active">✨ Nét 1080p/4K</button>
+                        <button type="button" class="ios-chip" onclick="document.getElementById('holdPill').textContent='📤 Đã mở Bảng Chia sẻ Native iOS (AirDrop / Zalo / iMessage)'">📤 Chia sẻ</button>
                     </div>
 
                     <div class="ytm-body">
@@ -600,8 +663,8 @@ const previewHtml = `<!DOCTYPE html>
                         <div class="ytm-feature-pills">
                             <span class="ytm-pill active">🛡️ Đã sửa lỗi 282054944</span>
                             <span class="ytm-pill active">🔒 Khoá màn hình vẫn phát</span>
-                            <span class="ytm-pill">📺 PiP 1 chạm</span>
-                            <span class="ytm-pill">⏩ Nhấn giữ 2x</span>
+                            <span class="ytm-pill active">🎧 Tắt hình tiết kiệm pin OLED</span>
+                            <span class="ytm-pill">⏩ Chạm đúp ±10s &amp; Giữ 2x</span>
                         </div>
 
                         <div class="ytm-card">
@@ -622,10 +685,11 @@ const previewHtml = `<!DOCTYPE html>
                     </div>
                 </div>
 
-                <!-- Bảng điều khiển FUNNYGAME (Popup / Stats / Options) -->
+                <!-- Bảng điều khiển FUNNYGAME (iOS 18 Sheet: Popup / Stats / Options) -->
                 <div class="ios-panel-container open" id="panelContainer">
+                    <div class="ios-sheet-grabber-row"><div class="ios-sheet-grabber"></div></div>
                     <div class="ios-panel-header">
-                        <img src="${squircleLogoUrl}" style="width:26px;height:26px;border-radius:7px;" alt="FG" />
+                        <img src="${squircleLogoUrl}" style="width:28px;height:28px;border-radius:7px;" alt="FG" />
                         <div class="ios-seg">
                             <button type="button" id="segPopup" class="active" onclick="showPanel('popup')">Điều khiển</button>
                             <button type="button" id="segStats" onclick="showPanel('stats')">Xếp hạng</button>
@@ -637,14 +701,22 @@ const previewHtml = `<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- Thanh Dock 5 nút chuẩn iPhone -->
+            <!-- Thanh Dock 5 nút chuẩn Apple SF Symbols iPhone -->
             <nav class="ios-dock">
-                <button type="button" class="ios-dock-btn" id="dockYt" onclick="closePanel()">▶ YouTube</button>
-                <button type="button" class="ios-dock-btn" onclick="closePanel()">🎵 Music</button>
-                <button type="button" class="ios-dock-btn" onclick="closePanel()">🎧 Spotify</button>
-                <button type="button" class="ios-dock-btn" onclick="triggerPiP()">📺 PiP</button>
+                <button type="button" class="ios-dock-btn" id="dockYt" onclick="closePanel()">
+                    <span class="dock-ico">▶️</span><span>YouTube</span>
+                </button>
+                <button type="button" class="ios-dock-btn" onclick="closePanel()">
+                    <span class="dock-ico">🎵</span><span>YT Music</span>
+                </button>
+                <button type="button" class="ios-dock-btn" onclick="closePanel()">
+                    <span class="dock-ico">🎧</span><span>Spotify</span>
+                </button>
+                <button type="button" class="ios-dock-btn" onclick="triggerPiP()">
+                    <span class="dock-ico">📺</span><span>PiP</span>
+                </button>
                 <button type="button" class="ios-dock-btn active" id="dockShield" onclick="showPanel('popup')">
-                    🛡️ Chặn QC
+                    <span class="dock-ico">🛡️</span><span>Chặn QC</span>
                     <span class="ios-dock-badge">128</span>
                 </button>
             </nav>
@@ -730,6 +802,36 @@ const previewHtml = `<!DOCTYPE html>
             closePanel();
             const pill = document.getElementById("holdPill");
             pill.textContent = "📺 Đã bật chế độ Hình-trong-hình (PiP) trên iOS";
+        }
+
+        const DEMO_SPEEDS = [1, 1.25, 1.5, 2, 0.75];
+        let demoSpeedIdx = 0;
+        function cycleDemoSpeed() {
+            demoSpeedIdx = (demoSpeedIdx + 1) % DEMO_SPEEDS.length;
+            const s = DEMO_SPEEDS[demoSpeedIdx];
+            const chip = document.getElementById("demoSpeedChip");
+            chip.textContent = "⚡ Tốc độ: " + s + "x";
+            chip.classList.toggle("active", s !== 1);
+            document.getElementById("holdPill").textContent = "⚡ Đã chuyển tốc độ phát sang " + s + "x";
+        }
+
+        let demoOled = false;
+        function toggleDemoOled() {
+            demoOled = !demoOled;
+            document.getElementById("demoAudioChip").classList.toggle("active", demoOled);
+            document.getElementById("demoPlayer").style.background = demoOled ? "#020306" : "";
+            document.getElementById("demoPlayerCaption").textContent = demoOled
+                ? "🎧 Đang bật Chế độ Chỉ nghe nhạc (Tiết kiệm pin OLED)"
+                : "Trình phát YouTube iOS không quảng cáo";
+            document.getElementById("holdPill").textContent = demoOled
+                ? "🎧 Đã tắt hình video · Chỉ phát âm thanh nền tiết kiệm pin"
+                : "🎬 Đã bật lại hình ảnh video";
+        }
+
+        function onDemoDoubleTap(e) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const left = (e.clientX - rect.left) < rect.width / 2;
+            document.getElementById("holdPill").textContent = left ? "⏪ Đã chạm đúp tua lùi -10 giây" : "⏩ Đã chạm đúp tua tới +10 giây";
         }
 
         // Mặc định mở Bảng điều khiển (Popup iPhone) hoặc theo query ?view=yt

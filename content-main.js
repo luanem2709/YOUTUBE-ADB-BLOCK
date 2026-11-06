@@ -1588,6 +1588,7 @@
     };
 
     function ambientWanted() {
+        if (window.__fgIosBridgeReady) return false;
         return allowLicense && fgSettings.ambientGlow !== false && isWatchPage() && !!document.body &&
             document.documentElement.hasAttribute("dark") && !document.fullscreenElement;
     }

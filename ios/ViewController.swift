@@ -21,10 +21,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     private var panelContainer: UIView?
     private var panelWebView: WKWebView?
     private var panelSegment: UISegmentedControl?
+    private var currentPanelPage: String = ""
     private var oauthContainer: UIView?
     private var oauthWebView: WKWebView?
 
     private var bgTask: UIBackgroundTaskIdentifier = .invalid
+    private let audioQueue = DispatchQueue(label: "com.funnygame.audio", qos: .userInitiated)
+    private var audioConfigured = false
+    private var resCache: [String: String] = [:]
+    private var cachedCombinedScript: WKUserScript?
 
     private let storageKeyLocal = "fg_chrome_storage_local_v1"
     private let storageKeySession = "fg_chrome_storage_session_v1"
@@ -76,13 +81,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     // ---------- Âm thanh nền & Màn hình khoá (Lock Screen / Control Center) ----------
-    private func configureAudioSession() {
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true)
-        } catch {
-            // Ignore audio session error
+    // Chạy bất đồng bộ trên audioQueue để KHÔNG bao giờ làm khựng/đơ cử chỉ vuốt thoát App (SpringBoard 120Hz)
+    private func configureAudioSession(forceCategory: Bool = false) {
+        audioQueue.async { [weak self] in
+            guard let self = self else { return }
+            do {
+                let session = AVAudioSession.sharedInstance()
+                if !self.audioConfigured || forceCategory {
+                    try session.setCategory(.playback, mode: .moviePlayback, options: [])
+                    self.audioConfigured = true
+                }
+                try session.setActive(true)
+            } catch {
+                // Ignore audio session error
+            }
         }
     }
 
@@ -135,6 +147,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     private func observeAppLifecycle() {
         NotificationCenter.default.addObserver(
             self,
+            selector: #selector(onWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
             selector: #selector(onDidEnterBackground),
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
@@ -147,10 +165,24 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         )
         NotificationCenter.default.addObserver(
             self,
+            selector: #selector(onDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
             selector: #selector(onAudioInterruption(_:)),
             name: AVAudioSession.interruptionNotification,
             object: AVAudioSession.sharedInstance()
         )
+    }
+
+    @objc private func onWillResignActive() {
+        // Khi người dùng bắt đầu vuốt thanh Home lên để thoát ra ngoài màn hình chính:
+        // Kích hoạt ngay Авто-PiP (Hình-trong-hình tự động) mượt mà không chặn luồng UI
+        if isAutoPiPEnabled() {
+            currentWebView()?.evaluateJavaScript("if (window.__fgAutoEnterPiP) window.__fgAutoEnterPiP();", completionHandler: nil)
+        }
     }
 
     @objc private func onDidEnterBackground() {
@@ -163,18 +195,19 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
                 }
             }
         }
-        // Tự động tiếp tục phát nếu iOS vừa tạm dừng video khi khoá màn hình
+        // Tự động tiếp tục phát nhạc nền nếu không ở chế độ PiP và người dùng đang phát video trước khi khoá máy
         if isBackgroundPlayEnabled() {
-            for delay in [0.15, 0.45, 0.9] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                    self?.configureAudioSession()
-                    self?.currentWebView()?.evaluateJavaScript("""
-                    (function() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { [weak self] in
+                self?.currentWebView()?.evaluateJavaScript("""
+                (function() {
+                    if (window.__fgShouldKeepPlaying && window.__fgShouldKeepPlaying()) {
                         var v = document.querySelector('video.html5-main-video, video, audio');
-                        if (v && v.paused && !v.ended) { v.play().catch(function(){}); }
-                    })();
-                    """, completionHandler: nil)
-                }
+                        if (v && v.paused && !v.ended && v.webkitPresentationMode !== 'picture-in-picture') {
+                            v.play().catch(function(){});
+                        }
+                    }
+                })();
+                """, completionHandler: nil)
             }
         }
     }
@@ -184,7 +217,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             UIApplication.shared.endBackgroundTask(bgTask)
             bgTask = .invalid
         }
-        configureAudioSession()
+    }
+
+    @objc private func onDidBecomeActive() {
+        // Khi quay lại ứng dụng FUNNYGAME: tự động thu khung PiP về lại trong trang mượt mà
+        currentWebView()?.evaluateJavaScript("if (window.__fgAutoExitPiP) window.__fgAutoExitPiP();", completionHandler: nil)
     }
 
     @objc private func onAudioInterruption(_ notification: Notification) {
@@ -211,20 +248,41 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         return true
     }
 
-    // ---------- Đọc tài nguyên & Lưu trữ UserDefaults ----------
+    private func isAutoPiPEnabled() -> Bool {
+        let raw = getStoredJson(storageKeyLocal)
+        guard let data = raw.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return true }
+        if let enabled = dict["enabled"] as? Bool, !enabled { return false }
+        if let settings = dict["settings"] as? [String: Any],
+           let pip = settings["pipButton"] as? Bool {
+            return pip
+        }
+        return true
+    }
+
+    // ---------- Đọc tài nguyên (Có bộ đệm RAM chống giật lag) & Lưu trữ UserDefaults ----------
     private func readResString(_ name: String) -> String {
+        if let cached = resCache["str:" + name] {
+            return cached
+        }
         if let path = Bundle.main.path(forResource: name, ofType: nil, inDirectory: "fg-ext"),
            let content = try? String(contentsOfFile: path, encoding: .utf8) {
+            resCache["str:" + name] = content
             return content
         }
         if let path = Bundle.main.path(forResource: name, ofType: nil),
            let content = try? String(contentsOfFile: path, encoding: .utf8) {
+            resCache["str:" + name] = content
             return content
         }
         return ""
     }
 
     private func readResBase64(_ name: String, mime: String) -> String {
+        let cacheKey = "b64:" + name
+        if let cached = resCache[cacheKey] {
+            return cached
+        }
         let paths = [
             Bundle.main.path(forResource: name, ofType: nil, inDirectory: "fg-ext/images"),
             Bundle.main.path(forResource: name, ofType: nil, inDirectory: "images"),
@@ -232,7 +290,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         ]
         for p in paths {
             if let validPath = p, let data = try? Data(contentsOf: URL(fileURLWithPath: validPath)) {
-                return "data:\(mime);base64," + data.base64EncodedString()
+                let out = "data:\(mime);base64," + data.base64EncodedString()
+                resCache[cacheKey] = out
+                return out
             }
         }
         return ""
@@ -353,38 +413,44 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         ucc.addUserScript(WKUserScript(
             source: bootstrap + "\n" + bridgeJs + "\n" + licenseJs,
             injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
+            forMainFrameOnly: true
         ))
 
         if !forPanel {
-            let cssCombined = readResString("content.css") + "\n" + readResString("mobile.css")
-            let cssScript = buildCssInjectionScript(cssCombined)
-            let ytNetJs = readResString("content-yt-net.js")
-            let ytMainJs = readResString("content-main.js")
-            let ytContentJs = readResString("content.js")
-            let spMainJs = readResString("content-spotify-main.js")
-            let spContentJs = readResString("content.spotify.js").isEmpty ? readResString("content-spotify.js") : readResString("content.spotify.js")
-            let mobileUiJs = readResString("mobile-ui.js")
+            if let cached = cachedCombinedScript {
+                ucc.addUserScript(cached)
+            } else {
+                let cssCombined = readResString("content.css") + "\n" + readResString("mobile.css")
+                let cssScript = buildCssInjectionScript(cssCombined)
+                let ytNetJs = readResString("content-yt-net.js")
+                let ytMainJs = readResString("content-main.js")
+                let ytContentJs = readResString("content.js")
+                let spMainJs = readResString("content-spotify-main.js")
+                let spContentJs = readResString("content.spotify.js").isEmpty ? readResString("content-spotify.js") : readResString("content.spotify.js")
+                let mobileUiJs = readResString("mobile-ui.js")
 
-            let combinedStart = """
-            if (/youtube\\.com/i.test(location.hostname)) {
-                \(cssScript)
-                \(ytNetJs)
-                \(ytMainJs)
-                \(ytContentJs)
-                \(mobileUiJs)
-            } else if (/spotify\\.com/i.test(location.hostname)) {
-                \(cssScript)
-                \(spMainJs)
-                \(spContentJs)
-                \(mobileUiJs)
+                let combinedStart = """
+                if (/youtube\\.com/i.test(location.hostname)) {
+                    \(cssScript)
+                    \(ytNetJs)
+                    \(ytMainJs)
+                    \(ytContentJs)
+                    \(mobileUiJs)
+                } else if (/spotify\\.com/i.test(location.hostname)) {
+                    \(cssScript)
+                    \(spMainJs)
+                    \(spContentJs)
+                    \(mobileUiJs)
+                }
+                """
+                let script = WKUserScript(
+                    source: combinedStart,
+                    injectionTime: .atDocumentStart,
+                    forMainFrameOnly: true
+                )
+                cachedCombinedScript = script
+                ucc.addUserScript(script)
             }
-            """
-            ucc.addUserScript(WKUserScript(
-                source: combinedStart,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            ))
         }
         return ucc
     }
@@ -653,11 +719,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     @objc private func onTapPanel() {
         triggerHaptic(style: .light)
-        if panelContainer != nil {
+        if let c = panelContainer, !c.isHidden {
             closePanel()
             highlightTab(activeTabIndex)
         } else {
-            openPanel(page: "popup.html")
+            openPanel(page: currentPanelPage.isEmpty ? "popup.html" : currentPanelPage)
         }
     }
 
@@ -958,13 +1024,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             panelSegment?.selectedSegmentIndex = 0
         }
 
-        let html = buildPanelHtml(page: page)
-        panelWebView?.loadHTMLString(html, baseURL: URL(string: "https://m.youtube.com/funnygame-panel"))
+        let wasHidden = panelContainer?.isHidden ?? false
+        panelContainer?.isHidden = false
 
-        if isNewSheet, let c = panelContainer {
-            c.transform = CGAffineTransform(translationX: 0, y: view.bounds.height * 0.45)
+        // Chỉ nạp lại HTML khi đổi tab con (Điều khiển / Xếp hạng / Cài đặt) để mở Sheet trong 0ms không giật
+        if currentPanelPage != page {
+            currentPanelPage = page
+            let html = buildPanelHtml(page: page)
+            panelWebView?.loadHTMLString(html, baseURL: URL(string: "https://m.youtube.com/funnygame-panel"))
+        }
+
+        if (isNewSheet || wasHidden), let c = panelContainer {
+            c.transform = CGAffineTransform(translationX: 0, y: view.bounds.height * 0.35)
             c.alpha = 0
-            UIView.animate(withDuration: 0.34, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0.9, options: [.curveEaseOut], animations: {
+            UIView.animate(withDuration: 0.26, delay: 0, usingSpringWithDamping: 0.88, initialSpringVelocity: 0.9, options: [.curveEaseOut, .allowUserInteraction], animations: {
                 c.transform = .identity
                 c.alpha = 1
             }, completion: nil)
@@ -982,7 +1055,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             if dy > 110 || vy > 650 {
                 onClosePanelTapped()
             } else {
-                UIView.animate(withDuration: 0.25, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0.5, options: [], animations: {
+                UIView.animate(withDuration: 0.22, delay: 0, usingSpringWithDamping: 0.88, initialSpringVelocity: 0.5, options: [.allowUserInteraction], animations: {
                     c.transform = .identity
                 }, completion: nil)
             }
@@ -1005,10 +1078,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     private func closePanel() {
-        panelContainer?.removeFromSuperview()
-        panelContainer = nil
-        panelWebView = nil
-        panelSegment = nil
+        guard let c = panelContainer, !c.isHidden else { return }
+        UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseIn, .allowUserInteraction], animations: {
+            c.transform = CGAffineTransform(translationX: 0, y: self.view.bounds.height * 0.35)
+            c.alpha = 0
+        }) { _ in
+            c.isHidden = true
+            c.transform = .identity
+        }
     }
 
     // ---------- Nhận tin nhắn từ Cầu nối JavaScript (fgBridge) ----------

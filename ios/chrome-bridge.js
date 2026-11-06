@@ -894,9 +894,124 @@
         }
     }, { passive: true });
 
-    // ---------- Thanh Công cụ Nhanh chuẩn App YouTube gốc dưới trình phát iPhone ----------
+    // ---------- Thanh Công cụ Nhanh chuẩn App YouTube Premium dưới trình phát iPhone ----------
     const SPEED_STEPS = [1, 1.25, 1.5, 2, 0.75];
     let currentUserSpeed = 1;
+
+    // YouTube Premium: Hẹn giờ đi ngủ (Sleep Timer)
+    const SLEEP_STEPS = [
+        { min: 0, label: "Tắt" },
+        { min: -1, label: "Hết video" },
+        { min: 15, label: "15p" },
+        { min: 30, label: "30p" },
+        { min: 60, label: "60p" },
+    ];
+    let sleepStepIdx = 0;
+    let sleepTimerId = null;
+
+    function applySleepTimer() {
+        if (sleepTimerId) {
+            clearTimeout(sleepTimerId);
+            sleepTimerId = null;
+        }
+        const step = SLEEP_STEPS[sleepStepIdx];
+        if (step.min > 0) {
+            sleepTimerId = setTimeout(() => {
+                const v = document.querySelector("video.html5-main-video, video, audio");
+                if (v && !v.paused) {
+                    try { v.pause(); } catch { /* ignore */ }
+                }
+                sleepStepIdx = 0;
+                const chip = document.getElementById("__fg_chip_sleep");
+                if (chip) {
+                    chip.textContent = "🌙 Hẹn giờ: Tắt";
+                    chip.classList.remove("fg-active");
+                }
+                postNative({ action: "toast", text: "🌙 Hẹn giờ tắt đã kích hoạt — Chúc bạn ngủ ngon!" });
+            }, step.min * 60 * 1000);
+        }
+    }
+
+    document.addEventListener("ended", (ev) => {
+        if (SLEEP_STEPS[sleepStepIdx] && SLEEP_STEPS[sleepStepIdx].min === -1) {
+            const v = ev.target;
+            if (v && (v.tagName === "VIDEO" || v.tagName === "AUDIO")) {
+                try { v.pause(); } catch { /* ignore */ }
+                sleepStepIdx = 0;
+                const chip = document.getElementById("__fg_chip_sleep");
+                if (chip) {
+                    chip.textContent = "🌙 Hẹn giờ: Tắt";
+                    chip.classList.remove("fg-active");
+                }
+                postNative({ action: "toast", text: "🌙 Đã dừng phát khi hết video theo Hẹn giờ" });
+            }
+        }
+    }, true);
+
+    // YouTube Premium: Tự động nhớ vị trí đang xem dở (Continue Watching) & Tự khóa 1080p Premium
+    const RESUME_KEY = "__fg_resume_map_v1";
+    let lastRestoredVid = "";
+    function getVideoIdFromUrl() {
+        try {
+            const u = new URL(location.href);
+            return u.searchParams.get("v") || "";
+        } catch {
+            return "";
+        }
+    }
+
+    function saveWatchProgress(v) {
+        if (!v || !isFinite(v.duration) || v.duration < 60) return;
+        const vid = getVideoIdFromUrl();
+        if (!vid) return;
+        try {
+            const raw = localStorage.getItem(RESUME_KEY);
+            const map = raw ? JSON.parse(raw) : {};
+            if (v.currentTime > 10 && v.currentTime < v.duration - 15) {
+                map[vid] = Math.floor(v.currentTime);
+            } else if (v.currentTime >= v.duration - 15) {
+                delete map[vid];
+            }
+            const keys = Object.keys(map);
+            if (keys.length > 80) delete map[keys[0]];
+            localStorage.setItem(RESUME_KEY, JSON.stringify(map));
+        } catch { /* ignore */ }
+    }
+
+    function restoreWatchProgressAndQuality(v) {
+        if (!v) return;
+        // 1. Tự động áp dụng chất lượng cao (1080p Premium / 4K) theo cài đặt
+        try {
+            const prefQ = (localStore.settings && localStore.settings.videoQuality) || "hd1080";
+            if (prefQ && prefQ !== "auto") {
+                const mp = document.getElementById("movie_player");
+                if (mp && typeof mp.setPlaybackQualityRange === "function") {
+                    mp.setPlaybackQualityRange(prefQ, "highres");
+                }
+            }
+        } catch { /* ignore */ }
+
+        // 2. Tiếp tục xem từ vị trí đang dở
+        const vid = getVideoIdFromUrl();
+        if (!vid || vid === lastRestoredVid) return;
+        lastRestoredVid = vid;
+        try {
+            const raw = localStorage.getItem(RESUME_KEY);
+            const map = raw ? JSON.parse(raw) : {};
+            const savedSec = map[vid];
+            if (savedSec && savedSec > 10 && v.currentTime < 5 && (!isFinite(v.duration) || savedSec < v.duration - 15)) {
+                v.currentTime = savedSec;
+                const mins = Math.floor(savedSec / 60);
+                const secs = String(savedSec % 60).padStart(2, "0");
+                postNative({ action: "toast", text: `▶️ Tiếp tục xem từ ${mins}:${secs}` });
+            }
+        } catch { /* ignore */ }
+    }
+
+    setInterval(() => {
+        const v = document.querySelector("video.html5-main-video, video");
+        if (v && !v.paused) saveWatchProgress(v);
+    }, 5000);
 
     function ensureIosActionBar() {
         if (!/youtube\.com/i.test(location.hostname)) return;
@@ -915,12 +1030,14 @@
             bar.id = "__fg_ios_action_bar";
             const autoPipOn = isAutoPipSettingOn();
             bar.innerHTML = `
+                <button type="button" class="fg-ios-chip" data-act="jump" id="__fg_chip_jump">⏭️ Đoạn hay nhất</button>
                 <button type="button" class="fg-ios-chip ${autoPipOn ? "fg-active" : ""}" data-act="autopip" id="__fg_chip_autopip">📺 Tự động PiP: ${autoPipOn ? "BẬT" : "TẮT"}</button>
                 <button type="button" class="fg-ios-chip" data-act="pip">🗗 Mở PiP ngay</button>
                 <button type="button" class="fg-ios-chip" data-act="speed" id="__fg_chip_speed">⚡ Tốc độ: 1x</button>
                 <button type="button" class="fg-ios-chip" data-act="audio" id="__fg_chip_audio">🎧 Tắt hình (OLED)</button>
+                <button type="button" class="fg-ios-chip" data-act="sleep" id="__fg_chip_sleep">🌙 Hẹn giờ: Tắt</button>
                 <button type="button" class="fg-ios-chip" data-act="loop" id="__fg_chip_loop">🔁 Lặp video</button>
-                <button type="button" class="fg-ios-chip" data-act="hd">✨ Nét cao nhất</button>
+                <button type="button" class="fg-ios-chip" data-act="hd">✨ 1080p Premium</button>
                 <button type="button" class="fg-ios-chip" data-act="share">📤 Chia sẻ</button>
             `;
             bar.addEventListener("click", (ev) => {
@@ -928,7 +1045,16 @@
                 if (!btn) return;
                 const act = btn.getAttribute("data-act");
                 const v = document.querySelector("video.html5-main-video, video");
-                if (act === "autopip") {
+                if (act === "jump") {
+                    postNative({ action: "haptic" });
+                    if (typeof window.__fgJumpAhead === "function") {
+                        const msg = window.__fgJumpAhead();
+                        if (msg) postNative({ action: "toast", text: msg });
+                    } else if (v) {
+                        v.currentTime = Math.min(v.duration || 999999, v.currentTime + 15);
+                        postNative({ action: "toast", text: "⏭️ Đã nhảy nhanh +15s qua đoạn mở đầu" });
+                    }
+                } else if (act === "autopip") {
                     const next = !isAutoPipSettingOn();
                     localStore.settings = { ...(localStore.settings || {}), pipButton: next };
                     postNative({ action: "storageSet", area: "local", patch: { settings: clone(localStore.settings) } });
@@ -961,6 +1087,18 @@
                         mp.appendChild(b);
                     }
                     postNative({ action: "toast", text: on ? "🎧 Đã tắt hình · Chỉ phát âm thanh tiết kiệm pin" : "🎬 Đã bật lại hình ảnh video" });
+                } else if (act === "sleep") {
+                    sleepStepIdx = (sleepStepIdx + 1) % SLEEP_STEPS.length;
+                    const step = SLEEP_STEPS[sleepStepIdx];
+                    applySleepTimer();
+                    btn.textContent = "🌙 Hẹn giờ: " + step.label;
+                    btn.classList.toggle("fg-active", step.min !== 0);
+                    postNative({
+                        action: "toast",
+                        text: step.min === 0
+                            ? "🌙 Đã tắt Hẹn giờ đi ngủ"
+                            : `🌙 Tự động dừng phát sau: ${step.label}`,
+                    });
                 } else if (act === "loop") {
                     if (!v) return;
                     v.loop = !v.loop;
@@ -973,7 +1111,7 @@
                             mp.setPlaybackQualityRange("hd1080", "highres");
                         }
                         btn.classList.add("fg-active");
-                        postNative({ action: "toast", text: "✨ Đã khoá chất lượng độ phân giải Cao nhất (HD/4K)" });
+                        postNative({ action: "toast", text: "✨ Đã kích hoạt 1080p Premium / 4K Bitrate cao nhất" });
                     } catch { /* ignore */ }
                 } else if (act === "share") {
                     postNative({
@@ -1001,7 +1139,12 @@
             ? ev.target
             : document.querySelector("video.html5-main-video, video, audio");
         if (!v) return;
-        if (v.tagName === "VIDEO") prepareVideoForAutoPiP(v);
+        if (v.tagName === "VIDEO") {
+            prepareVideoForAutoPiP(v);
+            if (ev && (ev.type === "loadedmetadata" || ev.type === "play")) {
+                restoreWatchProgressAndQuality(v);
+            }
+        }
         if (ev && ev.type === "play") wasPlayingBeforeHide = true;
         else if (ev && ev.type === "pause" && document.visibilityState === "visible") wasPlayingBeforeHide = false;
 

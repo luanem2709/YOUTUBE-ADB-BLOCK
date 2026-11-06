@@ -44,12 +44,17 @@ for vc in $VC_FILES; do
     cp "$ROOT_DIR/ios/ViewController.swift" "$vc"
 done
 
-# 4. Tạo bộ AppIcon 1024x1024 chuẩn iOS từ images/icon128.png bằng sips
-if [ -f "$ROOT_DIR/images/icon128.png" ]; then
+# 4. Tạo bộ AppIcon 1024x1024 chuẩn iOS từ ios/AppIcon-1024.png (hoặc images/icon128.png)
+ICON_SRC="$ROOT_DIR/ios/AppIcon-1024.png"
+if [ ! -f "$ICON_SRC" ]; then
+    ICON_SRC="$ROOT_DIR/images/icon128.png"
+fi
+if [ -f "$ICON_SRC" ]; then
     APPICON_DIRS="$(find "$PROJ_DIR" -type d -name "AppIcon.appiconset" || true)"
     for icondir in $APPICON_DIRS; do
-        echo "==> Tạo AppIcon 1024x1024 trong $icondir"
-        sips -z 1024 1024 "$ROOT_DIR/images/icon128.png" --out "$icondir/AppIcon-1024.png" >/dev/null 2>&1 || cp "$ROOT_DIR/images/icon128.png" "$icondir/AppIcon-1024.png"
+        echo "==> Tạo AppIcon 1024x1024 trong $icondir từ $ICON_SRC"
+        cp "$ICON_SRC" "$icondir/AppIcon-1024.png"
+        sips -z 1024 1024 "$icondir/AppIcon-1024.png" --out "$icondir/AppIcon-1024.png" >/dev/null 2>&1 || true
         cat > "$icondir/Contents.json" << 'EOF'
 {
   "images" : [

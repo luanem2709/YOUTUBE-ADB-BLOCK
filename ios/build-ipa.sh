@@ -23,7 +23,7 @@ unzip -q "dist/funnygame-safari-source-v${VERSION}.zip" -d "$EXT_SRC"
 xcrun safari-web-extension-converter "$EXT_SRC" \
     --project-location "$PROJ_DIR" \
     --app-name "FUNNYGAME" \
-    --bundle-identifier "com.luanem2709.funnygame" \
+    --bundle-identifier "com.luanem2709.FUNNYGAME" \
     --swift \
     --ios-only \
     --no-open \

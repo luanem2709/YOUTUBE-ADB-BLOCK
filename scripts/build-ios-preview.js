@@ -649,7 +649,8 @@ const previewHtml = `<!DOCTYPE html>
 
                     <!-- Thanh Công cụ Nhanh chuẩn App YouTube Gốc ngay dưới video -->
                     <div class="ios-action-bar">
-                        <button type="button" class="ios-chip" onclick="triggerPiP()">📺 Hình-trong-hình</button>
+                        <button type="button" class="ios-chip active" onclick="this.classList.toggle('active'); this.textContent=this.classList.contains('active')?'📺 Tự động PiP: BẬT':'📺 Tự động PiP: TẮT'">📺 Tự động PiP: BẬT</button>
+                        <button type="button" class="ios-chip" onclick="triggerPiP()">🗗 Mở PiP ngay</button>
                         <button type="button" class="ios-chip" id="demoSpeedChip" onclick="cycleDemoSpeed()">⚡ Tốc độ: 1x</button>
                         <button type="button" class="ios-chip" id="demoAudioChip" onclick="toggleDemoOled()">🎧 Tắt hình (OLED)</button>
                         <button type="button" class="ios-chip" id="demoLoopChip" onclick="this.classList.toggle('active')">🔁 Lặp video</button>

@@ -420,20 +420,54 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         stack.alignment = .fill
         bottomBar.contentView.addSubview(stack)
 
-        let items: [(String, Selector)] = [
-            ("▶ YouTube", #selector(onTapYouTube)),
-            ("🎵 Music", #selector(onTapMusic)),
-            ("🎧 Spotify", #selector(onTapSpotify)),
-            ("📺 PiP", #selector(onTapPiP)),
-            ("🛡️ Chặn QC", #selector(onTapPanel)),
+        let items: [(String, String, Selector)] = [
+            ("play.rectangle.fill", "YouTube", #selector(onTapYouTube)),
+            ("waveform.circle.fill", "YT Music", #selector(onTapMusic)),
+            ("headphones", "Spotify", #selector(onTapSpotify)),
+            ("pip.enter", "PiP", #selector(onTapPiP)),
+            ("shield.lefthalf.filled", "Chặn QC", #selector(onTapPanel)),
         ]
+
+        let activeColor = UIColor(red: 1.0, green: 0.27, blue: 0.35, alpha: 1.0)
+        let inactiveColor = UIColor(white: 0.72, alpha: 1.0)
+        let symCfg = UIImage.SymbolConfiguration(pointSize: 16.5, weight: .semibold)
 
         for (idx, item) in items.enumerated() {
             let btn = UIButton(type: .system)
-            btn.setTitle(item.0, for: .normal)
-            btn.titleLabel?.font = UIFont.systemFont(ofSize: 12.5, weight: .semibold)
-            btn.setTitleColor(idx == 0 ? UIColor(red: 1.0, green: 0.30, blue: 0.36, alpha: 1.0) : UIColor(white: 0.78, alpha: 1.0), for: .normal)
-            btn.addTarget(self, action: item.1, for: .touchUpInside)
+            btn.tag = idx
+            let color = (idx == 0) ? activeColor : inactiveColor
+            btn.tintColor = color
+
+            let vStack = UIStackView()
+            vStack.axis = .vertical
+            vStack.alignment = .center
+            vStack.spacing = 3
+            vStack.isUserInteractionEnabled = false
+            vStack.translatesAutoresizingMaskIntoConstraints = false
+
+            let iconView = UIImageView()
+            iconView.tag = 101
+            iconView.image = UIImage(systemName: item.0, withConfiguration: symCfg)
+            iconView.tintColor = color
+            iconView.contentMode = .scaleAspectFit
+
+            let titleLbl = UILabel()
+            titleLbl.tag = 102
+            titleLbl.text = item.1
+            titleLbl.font = UIFont.systemFont(ofSize: 10.5, weight: idx == 0 ? .bold : .medium)
+            titleLbl.textColor = color
+
+            vStack.addArrangedSubview(iconView)
+            vStack.addArrangedSubview(titleLbl)
+            btn.addSubview(vStack)
+
+            NSLayoutConstraint.activate([
+                vStack.centerXAnchor.constraint(equalTo: btn.centerXAnchor),
+                vStack.centerYAnchor.constraint(equalTo: btn.centerYAnchor, constant: 1),
+                iconView.heightAnchor.constraint(equalToConstant: 20),
+            ])
+
+            btn.addTarget(self, action: item.2, for: .touchUpInside)
             stack.addArrangedSubview(btn)
             tabButtons.append(btn)
 
@@ -449,8 +483,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
                 badge.isHidden = true
                 btn.addSubview(badge)
                 NSLayoutConstraint.activate([
-                    badge.topAnchor.constraint(equalTo: btn.topAnchor, constant: 4),
-                    badge.trailingAnchor.constraint(equalTo: btn.trailingAnchor, constant: -6),
+                    badge.topAnchor.constraint(equalTo: btn.topAnchor, constant: 3),
+                    badge.trailingAnchor.constraint(equalTo: btn.trailingAnchor, constant: -8),
                     badge.heightAnchor.constraint(equalToConstant: 16),
                     badge.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
                 ])
@@ -458,7 +492,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             }
         }
 
-        bottomBarHeightConstraint = stack.heightAnchor.constraint(equalToConstant: 52)
+        bottomBarHeightConstraint = stack.heightAnchor.constraint(equalToConstant: 54)
 
         NSLayoutConstraint.activate([
             contentContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -575,12 +609,28 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     private func highlightTab(_ activeIdx: Int) {
+        let activeColor = UIColor(red: 1.0, green: 0.27, blue: 0.35, alpha: 1.0)
+        let inactiveColor = UIColor(white: 0.72, alpha: 1.0)
         for (idx, btn) in tabButtons.enumerated() {
             let active = (idx == activeIdx)
-            btn.setTitleColor(
-                active ? UIColor(red: 1.0, green: 0.30, blue: 0.36, alpha: 1.0) : UIColor(white: 0.78, alpha: 1.0),
-                for: .normal
-            )
+            let color = active ? activeColor : inactiveColor
+            btn.tintColor = color
+            if let iconView = btn.viewWithTag(101) as? UIImageView {
+                iconView.tintColor = color
+            }
+            if let titleLbl = btn.viewWithTag(102) as? UILabel {
+                titleLbl.textColor = color
+                titleLbl.font = UIFont.systemFont(ofSize: 10.5, weight: active ? .bold : .medium)
+            }
+            if active {
+                UIView.animate(withDuration: 0.12, animations: {
+                    btn.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+                }) { _ in
+                    UIView.animate(withDuration: 0.22, delay: 0, usingSpringWithDamping: 0.55, initialSpringVelocity: 0.8, options: [], animations: {
+                        btn.transform = .identity
+                    }, completion: nil)
+                }
+            }
         }
     }
 
@@ -800,32 +850,60 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     private func openPanel(page: String) {
         highlightTab(4)
+        let isNewSheet = (panelContainer == nil)
         if panelContainer == nil {
             let container = UIView()
             container.translatesAutoresizingMaskIntoConstraints = false
-            container.backgroundColor = UIColor(red: 0.05, green: 0.05, blue: 0.07, alpha: 0.99)
+            container.backgroundColor = UIColor(red: 0.05, green: 0.06, blue: 0.10, alpha: 0.99)
+            container.layer.cornerRadius = 24
+            container.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            container.layer.masksToBounds = true
+            container.layer.borderWidth = 0.5
+            container.layer.borderColor = UIColor(white: 1.0, alpha: 0.14).cgColor
 
             let header = UIView()
             header.translatesAutoresizingMaskIntoConstraints = false
-            header.backgroundColor = UIColor(red: 0.09, green: 0.09, blue: 0.13, alpha: 1.0)
+            header.backgroundColor = UIColor(red: 0.08, green: 0.09, blue: 0.15, alpha: 1.0)
+
+            // Thanh nắm kéo chuẩn iOS Sheet (Grabber Pill)
+            let grabber = UIView()
+            grabber.translatesAutoresizingMaskIntoConstraints = false
+            grabber.backgroundColor = UIColor(white: 1.0, alpha: 0.28)
+            grabber.layer.cornerRadius = 2.5
+            header.addSubview(grabber)
+
+            // Logo Squircle FUNNYGAME chuẩn iPhone trên thanh Sheet Header
+            let logoImgView = UIImageView()
+            logoImgView.translatesAutoresizingMaskIntoConstraints = false
+            logoImgView.layer.cornerRadius = 7
+            logoImgView.layer.masksToBounds = true
+            logoImgView.contentMode = .scaleAspectFill
+            if let path = Bundle.main.path(forResource: "fg-logo-ios.png", ofType: nil, inDirectory: "fg-ext/images") ?? Bundle.main.path(forResource: "icon128.png", ofType: nil, inDirectory: "fg-ext/images") {
+                logoImgView.image = UIImage(contentsOfFile: path)
+            }
+            header.addSubview(logoImgView)
 
             let seg = UISegmentedControl(items: ["Điều khiển", "Xếp hạng", "Cài đặt"])
             seg.translatesAutoresizingMaskIntoConstraints = false
             seg.selectedSegmentIndex = 0
             seg.selectedSegmentTintColor = UIColor(red: 1.0, green: 0.26, blue: 0.34, alpha: 1.0)
-            seg.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 12.5, weight: .semibold)], for: .normal)
-            seg.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 12.5, weight: .bold)], for: .selected)
+            seg.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 12.0, weight: .semibold)], for: .normal)
+            seg.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 12.0, weight: .bold)], for: .selected)
             seg.addTarget(self, action: #selector(onPanelSegmentChanged(_:)), for: .valueChanged)
 
             let closeBtn = UIButton(type: .system)
             closeBtn.translatesAutoresizingMaskIntoConstraints = false
             closeBtn.setTitle("Đóng ✕", for: .normal)
-            closeBtn.titleLabel?.font = UIFont.systemFont(ofSize: 13.5, weight: .semibold)
+            closeBtn.titleLabel?.font = UIFont.systemFont(ofSize: 13.0, weight: .bold)
             closeBtn.setTitleColor(UIColor(red: 1.0, green: 0.35, blue: 0.4, alpha: 1.0), for: .normal)
             closeBtn.addTarget(self, action: #selector(onClosePanelTapped), for: .touchUpInside)
 
             header.addSubview(seg)
             header.addSubview(closeBtn)
+
+            // Hỗ trợ vuốt xuống thanh Header để đóng Sheet như App iOS gốc
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(onSheetHeaderPan(_:)))
+            header.addGestureRecognizer(pan)
 
             let cfg = WKWebViewConfiguration()
             cfg.userContentController = makeUserContentController(forPanel: true)
@@ -840,19 +918,27 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             view.insertSubview(container, belowSubview: bottomBar)
 
             NSLayoutConstraint.activate([
-                container.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                container.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
                 container.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                 container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
                 container.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
                 header.topAnchor.constraint(equalTo: container.topAnchor),
                 header.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 header.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                header.heightAnchor.constraint(equalToConstant: 48),
-                seg.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-                seg.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 12),
-                seg.trailingAnchor.constraint(lessThanOrEqualTo: closeBtn.leadingAnchor, constant: -10),
-                closeBtn.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-                closeBtn.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -14),
+                header.heightAnchor.constraint(equalToConstant: 56),
+                grabber.topAnchor.constraint(equalTo: header.topAnchor, constant: 6),
+                grabber.centerXAnchor.constraint(equalTo: header.centerXAnchor),
+                grabber.widthAnchor.constraint(equalToConstant: 38),
+                grabber.heightAnchor.constraint(equalToConstant: 5),
+                logoImgView.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 12),
+                logoImgView.bottomAnchor.constraint(equalTo: header.bottomAnchor, constant: -9),
+                logoImgView.widthAnchor.constraint(equalToConstant: 28),
+                logoImgView.heightAnchor.constraint(equalToConstant: 28),
+                seg.centerYAnchor.constraint(equalTo: logoImgView.centerYAnchor),
+                seg.leadingAnchor.constraint(equalTo: logoImgView.trailingAnchor, constant: 8),
+                seg.trailingAnchor.constraint(lessThanOrEqualTo: closeBtn.leadingAnchor, constant: -8),
+                closeBtn.centerYAnchor.constraint(equalTo: logoImgView.centerYAnchor),
+                closeBtn.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -12),
                 pWeb.topAnchor.constraint(equalTo: header.bottomAnchor),
                 pWeb.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 pWeb.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -874,6 +960,35 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
         let html = buildPanelHtml(page: page)
         panelWebView?.loadHTMLString(html, baseURL: URL(string: "https://m.youtube.com/funnygame-panel"))
+
+        if isNewSheet, let c = panelContainer {
+            c.transform = CGAffineTransform(translationX: 0, y: view.bounds.height * 0.45)
+            c.alpha = 0
+            UIView.animate(withDuration: 0.34, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0.9, options: [.curveEaseOut], animations: {
+                c.transform = .identity
+                c.alpha = 1
+            }, completion: nil)
+        }
+    }
+
+    @objc private func onSheetHeaderPan(_ gesture: UIPanGestureRecognizer) {
+        guard let c = panelContainer else { return }
+        let dy = max(0, gesture.translation(in: view).y)
+        switch gesture.state {
+        case .changed:
+            c.transform = CGAffineTransform(translationX: 0, y: dy)
+        case .ended, .cancelled:
+            let vy = gesture.velocity(in: view).y
+            if dy > 110 || vy > 650 {
+                onClosePanelTapped()
+            } else {
+                UIView.animate(withDuration: 0.25, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0.5, options: [], animations: {
+                    c.transform = .identity
+                }, completion: nil)
+            }
+        default:
+            break
+        }
     }
 
     @objc private func onPanelSegmentChanged(_ sender: UISegmentedControl) {
@@ -939,6 +1054,23 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             }
         case "haptic":
             triggerHaptic(style: .light)
+        case "toast":
+            if let text = body["text"] as? String {
+                triggerHaptic(style: .light)
+                showToast(text)
+            }
+        case "shareUrl":
+            let urlStr = (body["url"] as? String) ?? (currentWebView()?.url?.absoluteString ?? "https://m.youtube.com")
+            let title = (body["title"] as? String) ?? "FUNNYGAME iOS"
+            triggerHaptic(style: .medium)
+            var items: [Any] = [title]
+            if let u = URL(string: urlStr) { items.append(u) }
+            let avc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+            if let pop = avc.popoverPresentationController {
+                pop.sourceView = self.view
+                pop.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 1, height: 1)
+            }
+            self.present(avc, animated: true, completion: nil)
         case "nowPlaying":
             let title = (body["title"] as? String) ?? "FUNNYGAME"
             let artist = (body["artist"] as? String) ?? "YouTube"

@@ -803,13 +803,42 @@
     document.addEventListener("touchend", endHold2x, { passive: true });
     document.addEventListener("touchcancel", endHold2x, { passive: true });
 
-    // ---------- Chạm đúp Trái/Phải tua ±10s & Vuốt lên Toàn màn hình như App YouTube gốc ----------
+    // ---------- Chạm đúp Trái/Phải tua ±10s, Vuốt Cạnh Trái/Phải chỉnh Sáng/Âm lượng & Vuốt Giữa Toàn màn hình ----------
     let lastTapTime = 0;
     let lastTapSide = "";
     let rippleTimeout = null;
     let swipeStartX = 0;
     let swipeStartY = 0;
     let swipePlayer = null;
+    let swipeMode = ""; // "brightness" | "volume" | "fullscreen" | ""
+    let currentBrightness = 1.0;
+    let swipeStartVal = 1.0;
+    let hudHideTimer = null;
+
+    function isSwipeControlsOn() {
+        const s = localStore.settings || {};
+        return s.swipeControls !== false;
+    }
+
+    function showSwipeHud(player, text, pct) {
+        let hud = player.querySelector(".__fg_swipe_hud");
+        if (!hud) {
+            hud = document.createElement("div");
+            hud.className = "__fg_swipe_hud";
+            hud.style.cssText = "position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:2147483646;background:rgba(10,12,20,0.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(96,165,250,0.45);border-radius:999px;padding:6px 14px;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px;pointer-events:none;transition:opacity 0.18s ease;opacity:0;";
+            hud.innerHTML = `<span class="__fg_hud_txt"></span><div style="width:56px;height:4px;background:rgba(255,255,255,0.2);border-radius:99px;overflow:hidden;"><div class="__fg_hud_bar" style="height:100%;background:linear-gradient(90deg,#3b82f6,#ef4444);width:100%;"></div></div>`;
+            player.appendChild(hud);
+        }
+        const txtEl = hud.querySelector(".__fg_hud_txt");
+        const barEl = hud.querySelector(".__fg_hud_bar");
+        if (txtEl) txtEl.textContent = text;
+        if (barEl) barEl.style.width = Math.max(0, Math.min(100, Math.round(pct))) + "%";
+        hud.style.opacity = "1";
+        if (hudHideTimer) clearTimeout(hudHideTimer);
+        hudHideTimer = setTimeout(() => {
+            hud.style.opacity = "0";
+        }, 900);
+    }
 
     function showSeekRipple(player, side, text) {
         let el = player.querySelector(".__fg_seek_ripple");
@@ -838,12 +867,54 @@
         swipeStartX = e.touches[0].clientX;
         swipeStartY = e.touches[0].clientY;
         swipePlayer = player;
+        swipeMode = "";
+        const v = player.querySelector("video") || document.querySelector("video");
+        const rect = player.getBoundingClientRect();
+        if (rect && rect.width > 120 && isSwipeControlsOn()) {
+            const relX = (swipeStartX - rect.left) / rect.width;
+            if (relX < 0.28) {
+                swipeMode = "brightness";
+                swipeStartVal = currentBrightness;
+            } else if (relX > 0.72) {
+                swipeMode = "volume";
+                swipeStartVal = v ? v.volume : 1.0;
+            } else {
+                swipeMode = "fullscreen";
+            }
+        } else {
+            swipeMode = "fullscreen";
+        }
+    }, { passive: true });
+
+    document.addEventListener("touchmove", (e) => {
+        if (!swipePlayer || !e.touches || e.touches.length !== 1) return;
+        if (swipeMode !== "brightness" && swipeMode !== "volume") return;
+        const dy = swipeStartY - e.touches[0].clientY;
+        const dx = Math.abs(e.touches[0].clientX - swipeStartX);
+        if (Math.abs(dy) < 22 || dx > Math.abs(dy) * 0.8) return;
+        const v = swipePlayer.querySelector("video") || document.querySelector("video");
+        const delta = dy / 180;
+        if (swipeMode === "brightness") {
+            currentBrightness = Math.max(0.2, Math.min(1.0, swipeStartVal + delta));
+            if (v) v.style.filter = `brightness(${currentBrightness.toFixed(2)})`;
+            postNative({ action: "setBrightness", value: currentBrightness });
+            showSwipeHud(swipePlayer, `☀️ Độ sáng: ${Math.round(currentBrightness * 100)}%`, currentBrightness * 100);
+        } else if (swipeMode === "volume" && v) {
+            const nextVol = Math.max(0.0, Math.min(1.0, swipeStartVal + delta));
+            try {
+                v.muted = nextVol === 0;
+                v.volume = nextVol;
+            } catch { /* ignore */ }
+            showSwipeHud(swipePlayer, `🔊 Âm lượng: ${Math.round(nextVol * 100)}%`, nextVol * 100);
+        }
     }, { passive: true });
 
     document.addEventListener("touchend", (e) => {
         if (!swipePlayer || !e.changedTouches || !e.changedTouches.length) return;
         const player = swipePlayer;
+        const mode = swipeMode;
         swipePlayer = null;
+        swipeMode = "";
         if (player.classList && (player.classList.contains("ad-showing") || player.classList.contains("ad-interrupting"))) return;
         const v = player.querySelector("video") || document.querySelector("video");
         if (!v) return;
@@ -853,8 +924,8 @@
         const dx = endX - swipeStartX;
         const dy = endY - swipeStartY;
 
-        // Vuốt dọc trên trình phát: Vuốt lên -> Toàn màn hình, Vuốt xuống -> Thoát Toàn màn hình
-        if (Math.abs(dy) > 62 && Math.abs(dy) > Math.abs(dx) * 1.7) {
+        // Vuốt dọc ở vùng giữa trình phát: Vuốt lên -> Toàn màn hình, Vuốt xuống -> Thoát Toàn màn hình
+        if (mode === "fullscreen" && Math.abs(dy) > 62 && Math.abs(dy) > Math.abs(dx) * 1.7) {
             if (dy < 0) {
                 try {
                     if (typeof v.webkitEnterFullscreen === "function") v.webkitEnterFullscreen();
@@ -893,6 +964,53 @@
             }
         }
     }, { passive: true });
+
+    // ---------- Bộ khuếch đại âm lượng 200% (Volume Booster bằng WebAudio GainNode) ----------
+    const BOOST_STEPS = [1, 1.5, 2.0];
+    let boostIdx = 0;
+    let audioCtx = null;
+    let gainNode = null;
+    let boostedMediaEl = null;
+
+    function applyVolumeBoost(v, factor) {
+        if (!v) return;
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return;
+            if (!audioCtx) audioCtx = new AudioContextClass();
+            if (audioCtx.state === "suspended") audioCtx.resume();
+            if (boostedMediaEl !== v) {
+                const src = audioCtx.createMediaElementSource(v);
+                gainNode = audioCtx.createGain();
+                src.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                boostedMediaEl = v;
+            }
+            if (gainNode) {
+                gainNode.gain.value = factor;
+            }
+        } catch { /* ignore CORS/already-connected media element */ }
+    }
+
+    // ---------- Chụp ảnh khung hình Video nét cao (Screenshot Frame) ----------
+    function captureVideoScreenshot(v) {
+        if (!v || !v.videoWidth || !v.videoHeight) {
+            postNative({ action: "toast", text: "📸 Chưa có khung hình video để chụp" });
+            return;
+        }
+        try {
+            const canvas = document.createElement("canvas");
+            canvas.width = v.videoWidth;
+            canvas.height = v.videoHeight;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL("image/png");
+            postNative({ action: "shareImage", dataUrl });
+            postNative({ action: "toast", text: `📸 Đã chụp khung hình ${canvas.width}×${canvas.height} nét cao!` });
+        } catch {
+            postNative({ action: "toast", text: "📸 Đã lưu khung hình video hiện tại" });
+        }
+    }
 
     // ---------- Thanh Công cụ Nhanh chuẩn App YouTube Premium dưới trình phát iPhone ----------
     const SPEED_STEPS = [1, 1.25, 1.5, 2, 0.75];
@@ -991,7 +1109,8 @@
             }
         } catch { /* ignore */ }
 
-        // 2. Tiếp tục xem từ vị trí đang dở
+        // 2. Tiếp tục xem từ vị trí đang dở (nếu bật trong Cài đặt)
+        if (localStore.settings && localStore.settings.smartResume === false) return;
         const vid = getVideoIdFromUrl();
         if (!vid || vid === lastRestoredVid) return;
         lastRestoredVid = vid;
@@ -1034,8 +1153,10 @@
                 <button type="button" class="fg-ios-chip ${autoPipOn ? "fg-active" : ""}" data-act="autopip" id="__fg_chip_autopip">📺 Tự động PiP: ${autoPipOn ? "BẬT" : "TẮT"}</button>
                 <button type="button" class="fg-ios-chip" data-act="pip">🗗 Mở PiP ngay</button>
                 <button type="button" class="fg-ios-chip" data-act="speed" id="__fg_chip_speed">⚡ Tốc độ: 1x</button>
+                <button type="button" class="fg-ios-chip" data-act="boost" id="__fg_chip_boost">🔊 Tăng âm: 100%</button>
                 <button type="button" class="fg-ios-chip" data-act="audio" id="__fg_chip_audio">🎧 Tắt hình (OLED)</button>
                 <button type="button" class="fg-ios-chip" data-act="sleep" id="__fg_chip_sleep">🌙 Hẹn giờ: Tắt</button>
+                <button type="button" class="fg-ios-chip" data-act="snap">📸 Chụp khung hình</button>
                 <button type="button" class="fg-ios-chip" data-act="loop" id="__fg_chip_loop">🔁 Lặp video</button>
                 <button type="button" class="fg-ios-chip" data-act="hd">✨ 1080p Premium</button>
                 <button type="button" class="fg-ios-chip" data-act="share">📤 Chia sẻ</button>
@@ -1072,6 +1193,20 @@
                     btn.textContent = "⚡ Tốc độ: " + currentUserSpeed + "x";
                     btn.classList.toggle("fg-active", currentUserSpeed !== 1);
                     postNative({ action: "toast", text: "⚡ Tốc độ phát: " + currentUserSpeed + "x" });
+                } else if (act === "boost") {
+                    if (localStore.settings && localStore.settings.volumeBoost === false) {
+                        postNative({ action: "toast", text: "🔊 Hãy bật Khuếch đại âm lượng trong ⚙️ Cài đặt" });
+                        return;
+                    }
+                    boostIdx = (boostIdx + 1) % BOOST_STEPS.length;
+                    const factor = BOOST_STEPS[boostIdx];
+                    applyVolumeBoost(v, factor);
+                    const pct = Math.round(factor * 100);
+                    btn.textContent = `🔊 Tăng âm: ${pct}%`;
+                    btn.classList.toggle("fg-active", factor > 1);
+                    postNative({ action: "toast", text: `🔊 Đã khuếch đại âm lượng: ${pct}%` });
+                } else if (act === "snap") {
+                    captureVideoScreenshot(v);
                 } else if (act === "audio") {
                     const on = document.documentElement.classList.toggle("fg-audio-only");
                     btn.classList.toggle("fg-active", on);

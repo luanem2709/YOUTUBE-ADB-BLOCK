@@ -87,9 +87,13 @@ fs.writeFileSync(
 );
 
 if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
-execSync(
-    `powershell -NoProfile -Command "Compress-Archive -Path '${staging}\\*' -DestinationPath '${outPath}' -Force"`,
-    { stdio: "inherit" }
-);
+if (process.platform === "win32") {
+    execSync(
+        `powershell -NoProfile -Command "Compress-Archive -Path '${staging}\\*' -DestinationPath '${outPath}' -Force"`,
+        { stdio: "inherit" }
+    );
+} else {
+    execSync(`cd "${staging}" && zip -qr "${outPath}" .`, { stdio: "inherit" });
+}
 fs.rmSync(staging, { recursive: true });
 console.log("Đã tạo:", outPath);

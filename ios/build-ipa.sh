@@ -37,25 +37,52 @@ if [ -z "$XCODEPROJ" ]; then
 fi
 echo "==> Project Xcode: $XCODEPROJ"
 
-# 3. Thay ViewController.swift bằng bản App iOS độc lập (WKWebView + Phát nền + PiP + Khoá Key FUNNYGAME)
+# 3. Thay ViewController.swift bằng bản App iOS cao cấp (Đa Tab + PiP + Lock Screen + Hold 2x + Khoá Key FUNNYGAME)
 VC_FILES="$(find "$PROJ_DIR" -name "ViewController.swift")"
 for vc in $VC_FILES; do
     echo "==> Cập nhật $vc"
     cp "$ROOT_DIR/ios/ViewController.swift" "$vc"
 done
 
-# 4. Bật chế độ Phát nhạc nền (UIBackgroundModes = audio) trong Info.plist của Host App
+# 4. Tạo bộ AppIcon 1024x1024 chuẩn iOS từ images/icon128.png bằng sips
+if [ -f "$ROOT_DIR/images/icon128.png" ]; then
+    APPICON_DIRS="$(find "$PROJ_DIR" -type d -name "AppIcon.appiconset" || true)"
+    for icondir in $APPICON_DIRS; do
+        echo "==> Tạo AppIcon 1024x1024 trong $icondir"
+        sips -z 1024 1024 "$ROOT_DIR/images/icon128.png" --out "$icondir/AppIcon-1024.png" >/dev/null 2>&1 || cp "$ROOT_DIR/images/icon128.png" "$icondir/AppIcon-1024.png"
+        cat > "$icondir/Contents.json" << 'EOF'
+{
+  "images" : [
+    {
+      "filename" : "AppIcon-1024.png",
+      "idiom" : "universal",
+      "platform" : "ios",
+      "size" : "1024x1024"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
+EOF
+    done
+fi
+
+# 5. Bật chế độ Phát nhạc nền (UIBackgroundModes = audio) & giao diện tối trong Info.plist của Host App
 PLIST_FILES="$(find "$PROJ_DIR" -name "Info.plist" | grep -v "Extension" || true)"
 for plist in $PLIST_FILES; do
-    echo "==> Cấu hình UIBackgroundModes (audio) cho $plist"
+    echo "==> Cấu hình Info.plist cho $plist"
     /usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" "$plist" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$plist"
     /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string audio" "$plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName FUNNYGAME" "$plist" 2>/dev/null || \
         /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string FUNNYGAME" "$plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Set :UIViewControllerBasedStatusBarAppearance true" "$plist" 2>/dev/null || \
+        /usr/libexec/PlistBuddy -c "Add :UIViewControllerBasedStatusBarAppearance bool true" "$plist" 2>/dev/null || true
 done
 
-# 5. Biên dịch bản Release cho iOS (arm64) không cần chứng chỉ trả phí
+# 6. Biên dịch bản Release cho iOS (arm64) không cần chứng chỉ trả phí
 xcodebuild \
     -project "$XCODEPROJ" \
     -scheme "FUNNYGAME" \
@@ -77,7 +104,7 @@ if [ -z "$APP_PATH" ]; then
 fi
 echo "==> Đã biên dịch: $APP_PATH"
 
-# 6. Nhúng toàn bộ tài nguyên extension + cầu nối chrome-bridge.js vào FUNNYGAME.app/fg-ext
+# 7. Nhúng toàn bộ tài nguyên extension + cầu nối chrome-bridge.js vào FUNNYGAME.app/fg-ext
 mkdir -p "$APP_PATH/fg-ext"
 cp -R "$EXT_SRC/"* "$APP_PATH/fg-ext/"
 cp "$ROOT_DIR/ios/chrome-bridge.js" "$APP_PATH/fg-ext/chrome-bridge.js"
@@ -87,7 +114,7 @@ if [ -f "$ROOT_DIR/images/icon128.png" ]; then
     cp "$ROOT_DIR/images/icon128.png" "$APP_PATH/Icon.png" 2>/dev/null || true
 fi
 
-# 7. Ký Ad-hoc (-) để tương thích ngay với Sideloadly / AltStore / SideStore / TrollStore / ESign
+# 8. Ký Ad-hoc (-) để tương thích ngay với Sideloadly / AltStore / SideStore / TrollStore / ESign
 if [ -d "$APP_PATH/PlugIns" ]; then
     for appex in "$APP_PATH/PlugIns/"*.appex; do
         [ -e "$appex" ] || continue
@@ -96,7 +123,7 @@ if [ -d "$APP_PATH/PlugIns" ]; then
 fi
 codesign --force --sign - --timestamp=none "$APP_PATH" || true
 
-# 8. Đóng gói chuẩn Payload/FUNNYGAME.app -> .ipa
+# 9. Đóng gói chuẩn Payload/FUNNYGAME.app -> .ipa
 mkdir -p "$PAYLOAD_DIR"
 cp -R "$APP_PATH" "$PAYLOAD_DIR/FUNNYGAME.app"
 

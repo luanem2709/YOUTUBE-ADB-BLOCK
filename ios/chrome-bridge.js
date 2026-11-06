@@ -477,6 +477,100 @@
             opacity: 1;
             transform: translateX(-50%) scale(1);
         }
+        /* Tối ưu thanh Pivot Bar của m.youtube.com theo phong cách kính mờ iOS 18 */
+        ytm-pivot-bar-renderer {
+            background: rgba(12, 14, 22, 0.88) !important;
+            backdrop-filter: blur(20px) !important;
+            -webkit-backdrop-filter: blur(20px) !important;
+            border-top: 0.5px solid rgba(255, 255, 255, 0.10) !important;
+        }
+        /* Thanh Công cụ Nhanh kiểu App YouTube gốc ngay dưới video trên iPhone */
+        #__fg_ios_action_bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+            background: rgba(10, 12, 20, 0.94);
+            border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+        }
+        #__fg_ios_action_bar::-webkit-scrollbar {
+            display: none;
+        }
+        .fg-ios-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 0.5px solid rgba(255, 255, 255, 0.14);
+            background: rgba(255, 255, 255, 0.07);
+            color: #f8fafc;
+            font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            transition: transform 0.12s ease, background 0.15s ease;
+        }
+        .fg-ios-chip:active {
+            transform: scale(0.94);
+        }
+        .fg-ios-chip.fg-active {
+            background: rgba(37, 99, 235, 0.25);
+            border-color: rgba(96, 165, 250, 0.55);
+            color: #93c5fd;
+        }
+        /* Chế độ Chỉ nghe âm thanh (Tắt hình tiết kiệm pin OLED iPhone) */
+        html.fg-audio-only #movie_player video,
+        html.fg-audio-only .html5-video-player video {
+            opacity: 0.02 !important;
+            filter: brightness(0) !important;
+        }
+        #__fg_audio_only_banner {
+            position: absolute;
+            inset: 0;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: radial-gradient(circle, rgba(15, 23, 42, 0.92) 0%, rgba(5, 7, 15, 0.98) 100%);
+            color: #93c5fd;
+            font: 700 13px/1.35 -apple-system, BlinkMacSystemFont, sans-serif;
+            z-index: 25;
+            text-align: center;
+            padding: 16px;
+        }
+        html.fg-audio-only #__fg_audio_only_banner {
+            display: flex !important;
+        }
+        /* Hiệu ứng Sóng tròn Chạm đúp tua ±10 giây như App YouTube gốc */
+        .__fg_seek_ripple {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%) scale(0.85);
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: rgba(15, 18, 28, 0.82);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: #fff;
+            font: 800 13px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+            pointer-events: none;
+            z-index: 2147483645;
+            opacity: 0;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+        .__fg_seek_ripple.fg-left { left: 12%; }
+        .__fg_seek_ripple.fg-right { right: 12%; }
+        .__fg_seek_ripple.fg-show {
+            opacity: 1;
+            transform: translateY(-50%) scale(1);
+        }
     `;
 
     function buildLogoCss() {
@@ -613,6 +707,185 @@
 
     document.addEventListener("touchend", endHold2x, { passive: true });
     document.addEventListener("touchcancel", endHold2x, { passive: true });
+
+    // ---------- Chạm đúp Trái/Phải tua ±10s & Vuốt lên Toàn màn hình như App YouTube gốc ----------
+    let lastTapTime = 0;
+    let lastTapSide = "";
+    let rippleTimeout = null;
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+    let swipePlayer = null;
+
+    function showSeekRipple(player, side, text) {
+        let el = player.querySelector(".__fg_seek_ripple");
+        if (!el) {
+            el = document.createElement("div");
+            el.className = "__fg_seek_ripple";
+            player.appendChild(el);
+        }
+        el.className = "__fg_seek_ripple " + (side === "left" ? "fg-left" : "fg-right");
+        el.textContent = text;
+        void el.offsetWidth;
+        el.classList.add("fg-show");
+        if (rippleTimeout) clearTimeout(rippleTimeout);
+        rippleTimeout = setTimeout(() => {
+            el.classList.remove("fg-show");
+        }, 550);
+    }
+
+    document.addEventListener("touchstart", (e) => {
+        if (!e.touches || e.touches.length !== 1) return;
+        const t = e.target;
+        if (!t || !t.closest) return;
+        if (t.closest("button, a, input, [role='button'], [role='slider'], .ytp-chrome-bottom, #__fg_ios_action_bar")) return;
+        const player = t.closest("#movie_player, .html5-video-player, #player-container-id, ytm-player");
+        if (!player) return;
+        swipeStartX = e.touches[0].clientX;
+        swipeStartY = e.touches[0].clientY;
+        swipePlayer = player;
+    }, { passive: true });
+
+    document.addEventListener("touchend", (e) => {
+        if (!swipePlayer || !e.changedTouches || !e.changedTouches.length) return;
+        const player = swipePlayer;
+        swipePlayer = null;
+        if (player.classList && (player.classList.contains("ad-showing") || player.classList.contains("ad-interrupting"))) return;
+        const v = player.querySelector("video") || document.querySelector("video");
+        if (!v) return;
+
+        const endX = e.changedTouches[0].clientX;
+        const endY = e.changedTouches[0].clientY;
+        const dx = endX - swipeStartX;
+        const dy = endY - swipeStartY;
+
+        // Vuốt dọc trên trình phát: Vuốt lên -> Toàn màn hình, Vuốt xuống -> Thoát Toàn màn hình
+        if (Math.abs(dy) > 62 && Math.abs(dy) > Math.abs(dx) * 1.7) {
+            if (dy < 0) {
+                try {
+                    if (typeof v.webkitEnterFullscreen === "function") v.webkitEnterFullscreen();
+                    else if (player.requestFullscreen) player.requestFullscreen();
+                    postNative({ action: "haptic" });
+                } catch { /* ignore */ }
+            } else {
+                try {
+                    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+                    else if (typeof v.webkitExitFullscreen === "function") v.webkitExitFullscreen();
+                    postNative({ action: "haptic" });
+                } catch { /* ignore */ }
+            }
+            return;
+        }
+
+        // Chạm đúp 2 bên mép trình phát (Trái 32% / Phải 32%) để tua ±10 giây
+        if (Math.abs(dx) < 16 && Math.abs(dy) < 16) {
+            const rect = player.getBoundingClientRect();
+            if (!rect || rect.width < 120) return;
+            const relX = (endX - rect.left) / rect.width;
+            const side = relX < 0.32 ? "left" : (relX > 0.68 ? "right" : "");
+            if (!side) return;
+            const now = Date.now();
+            if (now - lastTapTime < 280 && lastTapSide === side) {
+                const delta = side === "left" ? -10 : 10;
+                try {
+                    v.currentTime = Math.max(0, Math.min(v.duration || 999999, v.currentTime + delta));
+                    showSeekRipple(player, side, side === "left" ? "⏪ -10 giây" : "10 giây ⏩");
+                    postNative({ action: "haptic" });
+                } catch { /* ignore */ }
+                lastTapTime = 0;
+            } else {
+                lastTapTime = now;
+                lastTapSide = side;
+            }
+        }
+    }, { passive: true });
+
+    // ---------- Thanh Công cụ Nhanh chuẩn App YouTube gốc dưới trình phát iPhone ----------
+    const SPEED_STEPS = [1, 1.25, 1.5, 2, 0.75];
+    let currentUserSpeed = 1;
+
+    function ensureIosActionBar() {
+        if (!/youtube\.com/i.test(location.hostname)) return;
+        const isWatch = location.pathname.startsWith("/watch");
+        const existing = document.getElementById("__fg_ios_action_bar");
+        if (!isWatch) {
+            if (existing) existing.style.display = "none";
+            return;
+        }
+        const anchor = document.querySelector("ytm-slim-video-metadata-section-renderer, .slim-video-metadata-header, #below, ytm-item-section-renderer");
+        if (!anchor || !anchor.parentNode) return;
+
+        let bar = existing;
+        if (!bar) {
+            bar = document.createElement("div");
+            bar.id = "__fg_ios_action_bar";
+            bar.innerHTML = `
+                <button type="button" class="fg-ios-chip" data-act="pip">📺 Hình-trong-hình</button>
+                <button type="button" class="fg-ios-chip" data-act="speed" id="__fg_chip_speed">⚡ Tốc độ: 1x</button>
+                <button type="button" class="fg-ios-chip" data-act="audio" id="__fg_chip_audio">🎧 Tắt hình (OLED)</button>
+                <button type="button" class="fg-ios-chip" data-act="loop" id="__fg_chip_loop">🔁 Lặp video</button>
+                <button type="button" class="fg-ios-chip" data-act="hd">✨ Nét cao nhất</button>
+                <button type="button" class="fg-ios-chip" data-act="share">📤 Chia sẻ</button>
+            `;
+            bar.addEventListener("click", (ev) => {
+                const btn = ev.target && ev.target.closest ? ev.target.closest(".fg-ios-chip") : null;
+                if (!btn) return;
+                const act = btn.getAttribute("data-act");
+                const v = document.querySelector("video.html5-main-video, video");
+                if (act === "pip") {
+                    const state = window.__fgTogglePiP();
+                    postNative({ action: "toast", text: state === "picture-in-picture" ? "📺 Đã bật Hình-trong-hình (PiP)" : "📺 Đã thu về trình phát chính" });
+                } else if (act === "speed") {
+                    const idx = (SPEED_STEPS.indexOf(currentUserSpeed) + 1) % SPEED_STEPS.length;
+                    currentUserSpeed = SPEED_STEPS[idx];
+                    if (v) { try { v.playbackRate = currentUserSpeed; } catch { /* ignore */ } }
+                    btn.textContent = "⚡ Tốc độ: " + currentUserSpeed + "x";
+                    btn.classList.toggle("fg-active", currentUserSpeed !== 1);
+                    postNative({ action: "toast", text: "⚡ Tốc độ phát: " + currentUserSpeed + "x" });
+                } else if (act === "audio") {
+                    const on = document.documentElement.classList.toggle("fg-audio-only");
+                    btn.classList.toggle("fg-active", on);
+                    const mp = document.querySelector("#movie_player, .html5-video-player");
+                    if (mp && !document.getElementById("__fg_audio_only_banner")) {
+                        const b = document.createElement("div");
+                        b.id = "__fg_audio_only_banner";
+                        b.innerHTML = "<div>🎧 Đang bật Chế độ Chỉ nghe nhạc (Tiết kiệm pin OLED)</div><div style='font-size:11px;color:#cbd5e1;font-weight:500'>Chạm vào đây để bật lại hình ảnh</div>";
+                        b.addEventListener("click", () => {
+                            document.documentElement.classList.remove("fg-audio-only");
+                            btn.classList.remove("fg-active");
+                        });
+                        mp.appendChild(b);
+                    }
+                    postNative({ action: "toast", text: on ? "🎧 Đã tắt hình · Chỉ phát âm thanh tiết kiệm pin" : "🎬 Đã bật lại hình ảnh video" });
+                } else if (act === "loop") {
+                    if (!v) return;
+                    v.loop = !v.loop;
+                    btn.classList.toggle("fg-active", v.loop);
+                    postNative({ action: "toast", text: v.loop ? "🔁 Đã bật Tự động lặp lại video" : "🔁 Đã tắt lặp lại video" });
+                } else if (act === "hd") {
+                    try {
+                        const mp = document.getElementById("movie_player");
+                        if (mp && typeof mp.setPlaybackQualityRange === "function") {
+                            mp.setPlaybackQualityRange("hd1080", "highres");
+                        }
+                        btn.classList.add("fg-active");
+                        postNative({ action: "toast", text: "✨ Đã khoá chất lượng độ phân giải Cao nhất (HD/4K)" });
+                    } catch { /* ignore */ }
+                } else if (act === "share") {
+                    postNative({
+                        action: "shareUrl",
+                        url: location.href,
+                        title: document.title.replace(/\s*-\s*YouTube$/i, ""),
+                    });
+                }
+            });
+        }
+        bar.style.display = "flex";
+        if (bar.nextSibling !== anchor) {
+            anchor.parentNode.insertBefore(bar, anchor);
+        }
+    }
+
+    setInterval(ensureIosActionBar, 1200);
 
     // ---------- Đồng bộ thông tin bài hát/video sang Màn hình khoá iOS (Now Playing) ----------
     let lastMetaAt = 0;

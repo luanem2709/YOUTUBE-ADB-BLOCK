@@ -31,7 +31,7 @@
             videoQuality: "auto",
             sponsorBlock: true,
             jumpAhead: true,
-            ambientGlow: true,
+            ambientGlow: false,
             customLogo: true,
         },
     };
@@ -369,24 +369,119 @@
         }
     } catch { /* ignore */ }
 
+    // ---------- Mở khoá & Tự động bật Picture-in-Picture (Auto-PiP) chuẩn iOS ----------
+    // Chặn YouTube khoá tính năng Picture-in-Picture trên phần tử <video>
+    try {
+        Object.defineProperty(HTMLVideoElement.prototype, "disablePictureInPicture", {
+            configurable: true,
+            get() { return false; },
+            set() {},
+        });
+        Object.defineProperty(HTMLVideoElement.prototype, "webkitWirelessVideoPlaybackDisabled", {
+            configurable: true,
+            get() { return false; },
+            set() {},
+        });
+    } catch { /* ignore */ }
+
+    let autoPipActive = false;
+    let wasPlayingBeforeHide = false;
+
+    function isAutoPipSettingOn() {
+        return localStore.enabled !== false && (!localStore.settings || localStore.settings.pipButton !== false);
+    }
+
+    function prepareVideoForAutoPiP(v) {
+        if (!v || v.tagName !== "VIDEO") return;
+        try {
+            v.removeAttribute("disablepictureinpicture");
+            v.setAttribute("playsinline", "");
+            v.setAttribute("webkit-playsinline", "");
+            if (isAutoPipSettingOn()) {
+                v.setAttribute("autopictureinpicture", "");
+                v.autoPictureInPicture = true;
+            } else {
+                v.removeAttribute("autopictureinpicture");
+                v.autoPictureInPicture = false;
+            }
+        } catch { /* ignore */ }
+    }
+
+    function findMainPlayingVideo() {
+        const player = document.querySelector("#movie_player, .html5-video-player, #player-container-id, ytm-player");
+        if (player && player.classList && (player.classList.contains("ad-showing") || player.classList.contains("ad-interrupting"))) {
+            return null;
+        }
+        const videos = [...document.querySelectorAll("video")];
+        const v = videos.find((el) => el.readyState >= 1 && (el.offsetWidth > 0 || el.offsetHeight > 0)) || videos[0];
+        if (!v) return null;
+        prepareVideoForAutoPiP(v);
+        return v;
+    }
+
+    // Gọi tự động khi vuốt thanh Home lên để thoát ra màn hình chính (willResignActive / visibilitychange)
+    window.__fgAutoEnterPiP = function () {
+        try {
+            if (!isAutoPipSettingOn()) return "disabled";
+            if (document.documentElement.classList.contains("fg-audio-only")) return "audio-only";
+            const v = findMainPlayingVideo();
+            if (!v || v.paused || v.ended || v.currentTime <= 0) return "not-playing";
+            wasPlayingBeforeHide = true;
+            if (typeof v.webkitSupportsPresentationMode === "function" && typeof v.webkitSetPresentationMode === "function") {
+                if (v.webkitPresentationMode !== "picture-in-picture") {
+                    v.webkitSetPresentationMode("picture-in-picture");
+                    autoPipActive = true;
+                }
+                return "picture-in-picture";
+            }
+            if (!document.pictureInPictureElement && typeof v.requestPictureInPicture === "function") {
+                v.requestPictureInPicture().catch(() => {});
+                autoPipActive = true;
+                return "picture-in-picture";
+            }
+        } catch { /* ignore */ }
+        return "ignored";
+    };
+
+    // Gọi tự động khi người dùng mở lại App FUNNYGAME (didBecomeActive)
+    window.__fgAutoExitPiP = function () {
+        try {
+            if (!autoPipActive) return;
+            autoPipActive = false;
+            const v = findMainPlayingVideo();
+            if (!v) return;
+            if (typeof v.webkitSetPresentationMode === "function" && v.webkitPresentationMode === "picture-in-picture") {
+                v.webkitSetPresentationMode("inline");
+            } else if (document.pictureInPictureElement && typeof document.exitPictureInPicture === "function") {
+                document.exitPictureInPicture().catch(() => {});
+            }
+        } catch { /* ignore */ }
+    };
+
+    window.__fgShouldKeepPlaying = function () {
+        return wasPlayingBeforeHide;
+    };
+
     // ---------- Hàm điều khiển Picture-in-Picture (PiP) & Media từ thanh Native iOS ----------
     window.__fgTogglePiP = function () {
         try {
-            const videos = [...document.querySelectorAll("video")];
-            const v = videos.find((el) => el.readyState >= 1 && (el.offsetWidth > 0 || el.offsetHeight > 0)) || videos[0];
+            const v = findMainPlayingVideo();
             if (!v) return "no-video";
             if (typeof v.webkitSupportsPresentationMode === "function" && typeof v.webkitSetPresentationMode === "function") {
                 const cur = v.webkitPresentationMode;
                 const next = cur === "picture-in-picture" ? "inline" : "picture-in-picture";
                 v.webkitSetPresentationMode(next);
+                autoPipActive = (next === "picture-in-picture");
                 return next;
             }
             if (document.pictureInPictureElement) {
                 document.exitPictureInPicture();
+                autoPipActive = false;
                 return "inline";
             }
             if (typeof v.requestPictureInPicture === "function") {
                 v.requestPictureInPicture();
+                autoPipActive = true;
                 return "picture-in-picture";
             }
         } catch { /* ignore */ }
@@ -818,8 +913,10 @@
         if (!bar) {
             bar = document.createElement("div");
             bar.id = "__fg_ios_action_bar";
+            const autoPipOn = isAutoPipSettingOn();
             bar.innerHTML = `
-                <button type="button" class="fg-ios-chip" data-act="pip">📺 Hình-trong-hình</button>
+                <button type="button" class="fg-ios-chip ${autoPipOn ? "fg-active" : ""}" data-act="autopip" id="__fg_chip_autopip">📺 Tự động PiP: ${autoPipOn ? "BẬT" : "TẮT"}</button>
+                <button type="button" class="fg-ios-chip" data-act="pip">🗗 Mở PiP ngay</button>
                 <button type="button" class="fg-ios-chip" data-act="speed" id="__fg_chip_speed">⚡ Tốc độ: 1x</button>
                 <button type="button" class="fg-ios-chip" data-act="audio" id="__fg_chip_audio">🎧 Tắt hình (OLED)</button>
                 <button type="button" class="fg-ios-chip" data-act="loop" id="__fg_chip_loop">🔁 Lặp video</button>
@@ -831,7 +928,15 @@
                 if (!btn) return;
                 const act = btn.getAttribute("data-act");
                 const v = document.querySelector("video.html5-main-video, video");
-                if (act === "pip") {
+                if (act === "autopip") {
+                    const next = !isAutoPipSettingOn();
+                    localStore.settings = { ...(localStore.settings || {}), pipButton: next };
+                    postNative({ action: "storageSet", area: "local", patch: { settings: clone(localStore.settings) } });
+                    btn.textContent = "📺 Tự động PiP: " + (next ? "BẬT" : "TẮT");
+                    btn.classList.toggle("fg-active", next);
+                    if (v) prepareVideoForAutoPiP(v);
+                    postNative({ action: "toast", text: next ? "📺 Đã BẬT Tự động Hình-trong-hình khi vuốt thoát App" : "📺 Đã TẮT Tự động Hình-trong-hình" });
+                } else if (act === "pip") {
                     const state = window.__fgTogglePiP();
                     postNative({ action: "toast", text: state === "picture-in-picture" ? "📺 Đã bật Hình-trong-hình (PiP)" : "📺 Đã thu về trình phát chính" });
                 } else if (act === "speed") {
@@ -885,16 +990,22 @@
         }
     }
 
-    setInterval(ensureIosActionBar, 1200);
+    document.addEventListener("yt-navigate-finish", () => setTimeout(ensureIosActionBar, 150));
+    window.addEventListener("popstate", () => setTimeout(ensureIosActionBar, 150));
+    setInterval(ensureIosActionBar, 2400);
 
-    // ---------- Đồng bộ thông tin bài hát/video sang Màn hình khoá iOS (Now Playing) ----------
-    let lastMetaAt = 0;
-    function syncNowPlaying() {
-        const now = Date.now();
-        if (now - lastMetaAt < 1800) return;
-        const v = document.querySelector("video.html5-main-video, video, audio");
-        if (!v || !isFinite(v.duration) || v.duration <= 0) return;
-        lastMetaAt = now;
+    // ---------- Đồng bộ thông tin bài hát/video sang Màn hình khoá iOS (Now Playing — Không spam timeupdate) ----------
+    let lastNowPlayingSignature = "";
+    function syncNowPlaying(ev) {
+        const v = (ev && ev.target && (ev.target.tagName === "VIDEO" || ev.target.tagName === "AUDIO"))
+            ? ev.target
+            : document.querySelector("video.html5-main-video, video, audio");
+        if (!v) return;
+        if (v.tagName === "VIDEO") prepareVideoForAutoPiP(v);
+        if (ev && ev.type === "play") wasPlayingBeforeHide = true;
+        else if (ev && ev.type === "pause" && document.visibilityState === "visible") wasPlayingBeforeHide = false;
+
+        if (!isFinite(v.duration) || v.duration <= 0) return;
 
         let title = document.title.replace(/\s*-\s*YouTube(\s*Music)?$/i, "").trim();
         let artist = location.hostname.replace(/^m\.|^www\./, "");
@@ -914,17 +1025,25 @@
             }
         } catch { /* ignore */ }
 
+        const rate = v.paused ? 0 : (Number(v.playbackRate) || 1);
+        const curBucket = Math.floor((Number(v.currentTime) || 0) / 3);
+        const sig = `${title}|${artist}|${Math.round(v.duration)}|${rate}|${curBucket}`;
+        if (sig === lastNowPlayingSignature) return;
+        lastNowPlayingSignature = sig;
+
         postNative({
             action: "nowPlaying",
             title: title || "FUNNYGAME",
             artist: artist || "YouTube",
             duration: Number(v.duration) || 0,
             currentTime: Number(v.currentTime) || 0,
-            rate: v.paused ? 0 : (Number(v.playbackRate) || 1),
+            rate,
         });
     }
 
+    document.addEventListener("loadedmetadata", syncNowPlaying, true);
     document.addEventListener("play", syncNowPlaying, true);
     document.addEventListener("pause", syncNowPlaying, true);
-    document.addEventListener("timeupdate", syncNowPlaying, true);
+    document.addEventListener("seeked", syncNowPlaying, true);
+    document.addEventListener("ratechange", syncNowPlaying, true);
 })();

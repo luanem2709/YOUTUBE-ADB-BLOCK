@@ -31,6 +31,9 @@
             videoQuality: "auto",
             sponsorBlock: true,
             jumpAhead: true,
+            smartResume: true,
+            swipeControls: true,
+            volumeBoost: true,
             ambientGlow: false,
             customLogo: true,
         },
@@ -571,6 +574,16 @@
         #__fg_hold_2x_badge.fg-show {
             opacity: 1;
             transform: translateX(-50%) scale(1);
+        }
+        /* Tối ưu cuộn mượt 120Hz ProMotion & giảm tải GPU khi lướt danh sách video m.youtube.com */
+        html, body {
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior-y: none;
+        }
+        ytm-rich-item-renderer,
+        ytm-video-with-context-renderer,
+        ytm-compact-video-renderer {
+            contain: layout style;
         }
         /* Tối ưu thanh Pivot Bar của m.youtube.com theo phong cách kính mờ iOS 18 */
         ytm-pivot-bar-renderer {
@@ -1128,12 +1141,33 @@
     }
 
     setInterval(() => {
+        if (!location.pathname.startsWith("/watch")) return;
         const v = document.querySelector("video.html5-main-video, video");
         if (v && !v.paused) saveWatchProgress(v);
     }, 5000);
 
+    function syncActionBarChips() {
+        const s = localStore.settings || {};
+        const autoPipOn = isAutoPipSettingOn();
+        const chipPip = document.getElementById("__fg_chip_autopip");
+        if (chipPip) {
+            chipPip.textContent = "📺 Tự động PiP: " + (autoPipOn ? "BẬT" : "TẮT");
+            chipPip.classList.toggle("fg-active", autoPipOn);
+        }
+        const chipJump = document.getElementById("__fg_chip_jump");
+        if (chipJump) {
+            chipJump.style.display = s.jumpAhead === false ? "none" : "";
+        }
+        const chipBoost = document.getElementById("__fg_chip_boost");
+        if (chipBoost) {
+            chipBoost.style.display = s.volumeBoost === false ? "none" : "";
+        }
+    }
+
+    storageListeners.add(syncActionBarChips);
+
     function ensureIosActionBar() {
-        if (!/youtube\.com/i.test(location.hostname)) return;
+        if (document.hidden || !/youtube\.com/i.test(location.hostname)) return;
         const isWatch = location.pathname.startsWith("/watch");
         const existing = document.getElementById("__fg_ios_action_bar");
         if (!isWatch) {
@@ -1257,6 +1291,7 @@
                 }
             });
         }
+        syncActionBarChips();
         bar.style.display = "flex";
         if (bar.nextSibling !== anchor) {
             anchor.parentNode.insertBefore(bar, anchor);
@@ -1265,7 +1300,7 @@
 
     document.addEventListener("yt-navigate-finish", () => setTimeout(ensureIosActionBar, 150));
     window.addEventListener("popstate", () => setTimeout(ensureIosActionBar, 150));
-    setInterval(ensureIosActionBar, 2400);
+    setInterval(ensureIosActionBar, 3200);
 
     // ---------- Đồng bộ thông tin bài hát/video sang Màn hình khoá iOS (Now Playing — Không spam timeupdate) ----------
     let lastNowPlayingSignature = "";

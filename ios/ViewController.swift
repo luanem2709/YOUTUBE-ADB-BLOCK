@@ -27,9 +27,18 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     private var bgTask: UIBackgroundTaskIdentifier = .invalid
     private let audioQueue = DispatchQueue(label: "com.funnygame.audio", qos: .userInitiated)
+    private let storageQueue = DispatchQueue(label: "com.funnygame.storage", qos: .utility)
+    private let sharedProcessPool = WKProcessPool()
+    private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
+    private let mediumHaptic = UIImpactFeedbackGenerator(style: .medium)
     private var audioConfigured = false
     private var resCache: [String: String] = [:]
     private var cachedCombinedScript: WKUserScript?
+    private var cachedContentRuleList: WKContentRuleList?
+    private var cachedLocalDict: [String: Any] = [:]
+    private var cachedSessionDict: [String: Any] = [:]
+    private var cachedLocalJson: String = "{}"
+    private var cachedSessionJson: String = "{}"
 
     private let storageKeyLocal = "fg_chrome_storage_local_v1"
     private let storageKeySession = "fg_chrome_storage_session_v1"
@@ -56,6 +65,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             storyboardWebView.removeFromSuperview()
         }
 
+        loadInitialStorageCache()
+        lightHaptic.prepare()
+        mediumHaptic.prepare()
+        compileNativeContentBlocker()
         configureAudioSession()
         configureRemoteCommands()
         observeAppLifecycle()
@@ -63,6 +76,23 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         setupLayout()
         updateBadgeFromStorage()
         switchToTab(0)
+
+        // Khởi tạo ngầm Bảng điều khiển Cài đặt sau 1.2s khi CPU rảnh để lần bấm đầu tiên mở tức thì 120Hz (0ms trễ)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            self?.prewarmPanelIfNeeded()
+        }
+    }
+
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        resCache.removeAll()
+        // Giải phóng các tab phụ đang ẩn nếu thiết bị thiếu RAM (giữ nguyên tab đang xem)
+        for (idx, wv) in webViews where idx != activeTabIndex {
+            progressObservations[idx]?.invalidate()
+            progressObservations.removeValue(forKey: idx)
+            wv.removeFromSuperview()
+            webViews.removeValue(forKey: idx)
+        }
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
@@ -236,12 +266,68 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         }
     }
 
+    private func loadInitialStorageCache() {
+        let rawLocal = UserDefaults.standard.string(forKey: storageKeyLocal) ?? "{}"
+        cachedLocalJson = rawLocal
+        if let data = rawLocal.data(using: .utf8),
+           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            cachedLocalDict = parsed
+        }
+        let rawSession = UserDefaults.standard.string(forKey: storageKeySession) ?? "{}"
+        cachedSessionJson = rawSession
+        if let data = rawSession.data(using: .utf8),
+           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            cachedSessionDict = parsed
+        }
+    }
+
+    // ---------- Chặn Quảng cáo tầng Mạng C++ gốc của WebKit (WKContentRuleListStore) ----------
+    // Chặn quảng cáo Spotify & Shopping từ tầng mạng mà KHÔNG động vào googlevideo (tránh lỗi 282054944)
+    private func compileNativeContentBlocker() {
+        let rulesJson = """
+        [
+          {
+            "trigger": { "url-filter": "^https?://spclient\\\\.wg\\\\.spotify\\\\.com/(ads|ad-logic|gabo-receiver-service)/" },
+            "action": { "type": "block" }
+          },
+          {
+            "trigger": { "url-filter": "^https?://(adeventtracker|pixel)\\\\.spotify\\\\.com" },
+            "action": { "type": "block" }
+          },
+          {
+            "trigger": { "url-filter": "^https?://audio-fa\\\\.(scdn\\\\.co|spotifycdn\\\\.com)" },
+            "action": { "type": "block" }
+          },
+          {
+            "trigger": {
+              "url-filter": "^https?://([a-z0-9-]+\\\\.)*(doubleclick\\\\.net|googlesyndication\\\\.com|googleadservices\\\\.com)",
+              "if-domain": ["*open.spotify.com", "*play.spotify.com", "*spotify.com"]
+            },
+            "action": { "type": "block" }
+          },
+          {
+            "trigger": {
+              "url-filter": "^https?://([a-z0-9-]+\\\\.)*youtube\\\\.com/(api/stats/shopping|pagead/shopping|ptracking/shopping)"
+            },
+            "action": { "type": "block" }
+          }
+        ]
+        """
+        WKContentRuleListStore.default()?.compileContentRuleList(
+            forIdentifier: "fg-ios-native-blocker-v2",
+            encodedContentRuleList: rulesJson
+        ) { [weak self] list, _ in
+            guard let self = self, let ruleList = list else { return }
+            self.cachedContentRuleList = ruleList
+            for (_, wv) in self.webViews {
+                wv.configuration.userContentController.add(ruleList)
+            }
+        }
+    }
+
     private func isBackgroundPlayEnabled() -> Bool {
-        let raw = getStoredJson(storageKeyLocal)
-        guard let data = raw.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return true }
-        if let enabled = dict["enabled"] as? Bool, !enabled { return false }
-        if let settings = dict["settings"] as? [String: Any],
+        if let enabled = cachedLocalDict["enabled"] as? Bool, !enabled { return false }
+        if let settings = cachedLocalDict["settings"] as? [String: Any],
            let bg = settings["backgroundPlay"] as? Bool {
             return bg
         }
@@ -249,18 +335,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     private func isAutoPiPEnabled() -> Bool {
-        let raw = getStoredJson(storageKeyLocal)
-        guard let data = raw.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return true }
-        if let enabled = dict["enabled"] as? Bool, !enabled { return false }
-        if let settings = dict["settings"] as? [String: Any],
+        if let enabled = cachedLocalDict["enabled"] as? Bool, !enabled { return false }
+        if let settings = cachedLocalDict["settings"] as? [String: Any],
            let pip = settings["pipButton"] as? Bool {
             return pip
         }
         return true
     }
 
-    // ---------- Đọc tài nguyên (Có bộ đệm RAM chống giật lag) & Lưu trữ UserDefaults ----------
+    // ---------- Đọc tài nguyên (Có bộ đệm RAM chống giật lag) & Lưu trữ UserDefaults Bất đồng bộ ----------
     private func readResString(_ name: String) -> String {
         if let cached = resCache["str:" + name] {
             return cached
@@ -299,47 +382,46 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     private func getStoredJson(_ key: String) -> String {
-        return UserDefaults.standard.string(forKey: key) ?? "{}"
+        return (key == storageKeySession) ? cachedSessionJson : cachedLocalJson
+    }
+
+    private func persistDictAsync(_ dict: [String: Any], forKey key: String) {
+        if let outData = try? JSONSerialization.data(withJSONObject: dict),
+           let outStr = String(data: outData, encoding: .utf8) {
+            if key == storageKeySession {
+                cachedSessionJson = outStr
+            } else {
+                cachedLocalJson = outStr
+            }
+            storageQueue.async {
+                UserDefaults.standard.set(outStr, forKey: key)
+            }
+        }
     }
 
     private func mergeStoredJson(_ key: String, patch: [String: Any]) {
-        let raw = getStoredJson(key)
-        var dict: [String: Any] = [:]
-        if let data = raw.data(using: .utf8),
-           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            dict = parsed
-        }
-        for (k, v) in patch {
-            dict[k] = v
-        }
-        if let outData = try? JSONSerialization.data(withJSONObject: dict),
-           let outStr = String(data: outData, encoding: .utf8) {
-            UserDefaults.standard.set(outStr, forKey: key)
+        if key == storageKeySession {
+            for (k, v) in patch { cachedSessionDict[k] = v }
+            persistDictAsync(cachedSessionDict, forKey: key)
+        } else {
+            for (k, v) in patch { cachedLocalDict[k] = v }
+            persistDictAsync(cachedLocalDict, forKey: key)
         }
     }
 
     private func removeStoredKeys(_ key: String, keys: [String]) {
-        let raw = getStoredJson(key)
-        var dict: [String: Any] = [:]
-        if let data = raw.data(using: .utf8),
-           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            dict = parsed
-        }
-        for k in keys {
-            dict.removeValue(forKey: k)
-        }
-        if let outData = try? JSONSerialization.data(withJSONObject: dict),
-           let outStr = String(data: outData, encoding: .utf8) {
-            UserDefaults.standard.set(outStr, forKey: key)
+        if key == storageKeySession {
+            for k in keys { cachedSessionDict.removeValue(forKey: k) }
+            persistDictAsync(cachedSessionDict, forKey: key)
+        } else {
+            for k in keys { cachedLocalDict.removeValue(forKey: k) }
+            persistDictAsync(cachedLocalDict, forKey: key)
         }
     }
 
     private func updateBadgeFromStorage() {
-        let raw = getStoredJson(storageKeyLocal)
-        guard let data = raw.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-        let count = (dict["adsBlocked"] as? Int) ?? 0
-        let enabled = (dict["enabled"] as? Bool) ?? true
+        let count = (cachedLocalDict["adsBlocked"] as? Int) ?? 0
+        let enabled = (cachedLocalDict["enabled"] as? Bool) ?? true
         updateBadgeUI(count: count, enabled: enabled)
     }
 
@@ -417,6 +499,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         ))
 
         if !forPanel {
+            if let ruleList = cachedContentRuleList {
+                ucc.add(ruleList)
+            }
             if let cached = cachedCombinedScript {
                 ucc.addUserScript(cached)
             } else {
@@ -593,6 +678,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             return existing
         }
         let config = WKWebViewConfiguration()
+        config.processPool = sharedProcessPool
         config.websiteDataStore = .default()
         config.userContentController = makeUserContentController(forPanel: false)
         config.allowsInlineMediaPlayback = true
@@ -728,9 +814,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     private func triggerHaptic(style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        let gen = UIImpactFeedbackGenerator(style: style)
-        gen.prepare()
-        gen.impactOccurred()
+        if style == .medium {
+            mediumHaptic.impactOccurred()
+        } else {
+            lightHaptic.impactOccurred()
+        }
     }
 
     private func showToast(_ text: String) {
@@ -914,105 +1002,120 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         return html
     }
 
+    private func prewarmPanelIfNeeded() {
+        guard panelContainer == nil else { return }
+        ensurePanelCreated()
+        panelContainer?.isHidden = true
+        if currentPanelPage != "popup.html" {
+            currentPanelPage = "popup.html"
+            let html = buildPanelHtml(page: "popup.html")
+            panelWebView?.loadHTMLString(html, baseURL: URL(string: "https://m.youtube.com/funnygame-panel"))
+        }
+    }
+
+    private func ensurePanelCreated() {
+        guard panelContainer == nil else { return }
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.backgroundColor = UIColor(red: 0.05, green: 0.06, blue: 0.10, alpha: 0.99)
+        container.layer.cornerRadius = 24
+        container.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        container.layer.masksToBounds = true
+        container.layer.borderWidth = 0.5
+        container.layer.borderColor = UIColor(white: 1.0, alpha: 0.14).cgColor
+
+        let header = UIView()
+        header.translatesAutoresizingMaskIntoConstraints = false
+        header.backgroundColor = UIColor(red: 0.08, green: 0.09, blue: 0.15, alpha: 1.0)
+
+        // Thanh nắm kéo chuẩn iOS Sheet (Grabber Pill)
+        let grabber = UIView()
+        grabber.translatesAutoresizingMaskIntoConstraints = false
+        grabber.backgroundColor = UIColor(white: 1.0, alpha: 0.28)
+        grabber.layer.cornerRadius = 2.5
+        header.addSubview(grabber)
+
+        // Logo Squircle FUNNYGAME chuẩn iPhone trên thanh Sheet Header
+        let logoImgView = UIImageView()
+        logoImgView.translatesAutoresizingMaskIntoConstraints = false
+        logoImgView.layer.cornerRadius = 7
+        logoImgView.layer.masksToBounds = true
+        logoImgView.contentMode = .scaleAspectFill
+        if let path = Bundle.main.path(forResource: "fg-logo-ios.png", ofType: nil, inDirectory: "fg-ext/images") ?? Bundle.main.path(forResource: "icon128.png", ofType: nil, inDirectory: "fg-ext/images") {
+            logoImgView.image = UIImage(contentsOfFile: path)
+        }
+        header.addSubview(logoImgView)
+
+        // Tiêu đề Bảng điều khiển Cài đặt gọn gàng (chỉ hiển thị Bảng điều khiển chính)
+        let sheetTitle = UILabel()
+        sheetTitle.translatesAutoresizingMaskIntoConstraints = false
+        sheetTitle.text = "Bảng điều khiển · Cài đặt"
+        sheetTitle.font = UIFont.systemFont(ofSize: 15.0, weight: .bold)
+        sheetTitle.textColor = .white
+
+        let closeBtn = UIButton(type: .system)
+        closeBtn.translatesAutoresizingMaskIntoConstraints = false
+        closeBtn.setTitle("Xong ✕", for: .normal)
+        closeBtn.titleLabel?.font = UIFont.systemFont(ofSize: 13.5, weight: .bold)
+        closeBtn.setTitleColor(UIColor(red: 0.38, green: 0.65, blue: 0.98, alpha: 1.0), for: .normal)
+        closeBtn.addTarget(self, action: #selector(onClosePanelTapped), for: .touchUpInside)
+
+        header.addSubview(sheetTitle)
+        header.addSubview(closeBtn)
+
+        // Hỗ trợ vuốt xuống thanh Header để đóng Sheet như App iOS gốc
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(onSheetHeaderPan(_:)))
+        header.addGestureRecognizer(pan)
+
+        let cfg = WKWebViewConfiguration()
+        cfg.processPool = sharedProcessPool
+        cfg.userContentController = makeUserContentController(forPanel: true)
+        let pWeb = WKWebView(frame: .zero, configuration: cfg)
+        pWeb.translatesAutoresizingMaskIntoConstraints = false
+        pWeb.backgroundColor = .clear
+        pWeb.isOpaque = false
+        pWeb.scrollView.backgroundColor = .clear
+
+        container.addSubview(header)
+        container.addSubview(pWeb)
+        view.insertSubview(container, belowSubview: bottomBar)
+
+        NSLayoutConstraint.activate([
+            container.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            container.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
+            header.topAnchor.constraint(equalTo: container.topAnchor),
+            header.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: 54),
+            grabber.topAnchor.constraint(equalTo: header.topAnchor, constant: 6),
+            grabber.centerXAnchor.constraint(equalTo: header.centerXAnchor),
+            grabber.widthAnchor.constraint(equalToConstant: 38),
+            grabber.heightAnchor.constraint(equalToConstant: 5),
+            logoImgView.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 14),
+            logoImgView.bottomAnchor.constraint(equalTo: header.bottomAnchor, constant: -9),
+            logoImgView.widthAnchor.constraint(equalToConstant: 26),
+            logoImgView.heightAnchor.constraint(equalToConstant: 26),
+            sheetTitle.centerYAnchor.constraint(equalTo: logoImgView.centerYAnchor),
+            sheetTitle.leadingAnchor.constraint(equalTo: logoImgView.trailingAnchor, constant: 10),
+            sheetTitle.trailingAnchor.constraint(lessThanOrEqualTo: closeBtn.leadingAnchor, constant: -8),
+            closeBtn.centerYAnchor.constraint(equalTo: logoImgView.centerYAnchor),
+            closeBtn.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -14),
+            pWeb.topAnchor.constraint(equalTo: header.bottomAnchor),
+            pWeb.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            pWeb.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            pWeb.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+
+        panelContainer = container
+        panelWebView = pWeb
+    }
+
     private func openPanel(page: String) {
         highlightTab(4)
         let isNewSheet = (panelContainer == nil)
-        if panelContainer == nil {
-            let container = UIView()
-            container.translatesAutoresizingMaskIntoConstraints = false
-            container.backgroundColor = UIColor(red: 0.05, green: 0.06, blue: 0.10, alpha: 0.99)
-            container.layer.cornerRadius = 24
-            container.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-            container.layer.masksToBounds = true
-            container.layer.borderWidth = 0.5
-            container.layer.borderColor = UIColor(white: 1.0, alpha: 0.14).cgColor
-
-            let header = UIView()
-            header.translatesAutoresizingMaskIntoConstraints = false
-            header.backgroundColor = UIColor(red: 0.08, green: 0.09, blue: 0.15, alpha: 1.0)
-
-            // Thanh nắm kéo chuẩn iOS Sheet (Grabber Pill)
-            let grabber = UIView()
-            grabber.translatesAutoresizingMaskIntoConstraints = false
-            grabber.backgroundColor = UIColor(white: 1.0, alpha: 0.28)
-            grabber.layer.cornerRadius = 2.5
-            header.addSubview(grabber)
-
-            // Logo Squircle FUNNYGAME chuẩn iPhone trên thanh Sheet Header
-            let logoImgView = UIImageView()
-            logoImgView.translatesAutoresizingMaskIntoConstraints = false
-            logoImgView.layer.cornerRadius = 7
-            logoImgView.layer.masksToBounds = true
-            logoImgView.contentMode = .scaleAspectFill
-            if let path = Bundle.main.path(forResource: "fg-logo-ios.png", ofType: nil, inDirectory: "fg-ext/images") ?? Bundle.main.path(forResource: "icon128.png", ofType: nil, inDirectory: "fg-ext/images") {
-                logoImgView.image = UIImage(contentsOfFile: path)
-            }
-            header.addSubview(logoImgView)
-
-            // Tiêu đề Bảng điều khiển Cài đặt gọn gàng (chỉ hiển thị Bảng điều khiển chính)
-            let sheetTitle = UILabel()
-            sheetTitle.translatesAutoresizingMaskIntoConstraints = false
-            sheetTitle.text = "Bảng điều khiển · Cài đặt"
-            sheetTitle.font = UIFont.systemFont(ofSize: 15.0, weight: .bold)
-            sheetTitle.textColor = .white
-
-            let closeBtn = UIButton(type: .system)
-            closeBtn.translatesAutoresizingMaskIntoConstraints = false
-            closeBtn.setTitle("Xong ✕", for: .normal)
-            closeBtn.titleLabel?.font = UIFont.systemFont(ofSize: 13.5, weight: .bold)
-            closeBtn.setTitleColor(UIColor(red: 0.38, green: 0.65, blue: 0.98, alpha: 1.0), for: .normal)
-            closeBtn.addTarget(self, action: #selector(onClosePanelTapped), for: .touchUpInside)
-
-            header.addSubview(sheetTitle)
-            header.addSubview(closeBtn)
-
-            // Hỗ trợ vuốt xuống thanh Header để đóng Sheet như App iOS gốc
-            let pan = UIPanGestureRecognizer(target: self, action: #selector(onSheetHeaderPan(_:)))
-            header.addGestureRecognizer(pan)
-
-            let cfg = WKWebViewConfiguration()
-            cfg.userContentController = makeUserContentController(forPanel: true)
-            let pWeb = WKWebView(frame: .zero, configuration: cfg)
-            pWeb.translatesAutoresizingMaskIntoConstraints = false
-            pWeb.backgroundColor = .clear
-            pWeb.isOpaque = false
-            pWeb.scrollView.backgroundColor = .clear
-
-            container.addSubview(header)
-            container.addSubview(pWeb)
-            view.insertSubview(container, belowSubview: bottomBar)
-
-            NSLayoutConstraint.activate([
-                container.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
-                container.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                container.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
-                header.topAnchor.constraint(equalTo: container.topAnchor),
-                header.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                header.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                header.heightAnchor.constraint(equalToConstant: 54),
-                grabber.topAnchor.constraint(equalTo: header.topAnchor, constant: 6),
-                grabber.centerXAnchor.constraint(equalTo: header.centerXAnchor),
-                grabber.widthAnchor.constraint(equalToConstant: 38),
-                grabber.heightAnchor.constraint(equalToConstant: 5),
-                logoImgView.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 14),
-                logoImgView.bottomAnchor.constraint(equalTo: header.bottomAnchor, constant: -9),
-                logoImgView.widthAnchor.constraint(equalToConstant: 26),
-                logoImgView.heightAnchor.constraint(equalToConstant: 26),
-                sheetTitle.centerYAnchor.constraint(equalTo: logoImgView.centerYAnchor),
-                sheetTitle.leadingAnchor.constraint(equalTo: logoImgView.trailingAnchor, constant: 10),
-                sheetTitle.trailingAnchor.constraint(lessThanOrEqualTo: closeBtn.leadingAnchor, constant: -8),
-                closeBtn.centerYAnchor.constraint(equalTo: logoImgView.centerYAnchor),
-                closeBtn.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -14),
-                pWeb.topAnchor.constraint(equalTo: header.bottomAnchor),
-                pWeb.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                pWeb.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                pWeb.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            ])
-
-            panelContainer = container
-            panelWebView = pWeb
-        }
+        ensurePanelCreated()
 
         let wasHidden = panelContainer?.isHidden ?? false
         panelContainer?.isHidden = false

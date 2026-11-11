@@ -102,7 +102,7 @@ body {
 
 .toggle {
     min-width: 50px;
-    min-height: 30px;
+    min-height: 44px; /* Apple HIG: vùng chạm tối thiểu 44pt */
 }
 
 /* Công tắc bật/tắt chuẩn iOS 18 (Apple Cupertino Switch) */
@@ -128,7 +128,7 @@ body {
 }
 
 .setting-tile {
-    min-height: 60px;
+    min-height: 60px; /* ≥56px từ popup.css + overrides iOS */
     border-radius: 15px !important;
     background: rgba(255, 255, 255, 0.04) !important;
     border: 0.5px solid rgba(255, 255, 255, 0.08) !important;

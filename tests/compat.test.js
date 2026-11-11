@@ -156,5 +156,20 @@ check("C6 backdrop-filter luon kem -webkit-backdrop-filter (iOS 15-17)", bdMiss.
 const gen = rd("ios/build-ipa.sh");
 check("C7 tai lieu/CI khong bao iOS thap hon 15 (Safari Web Extension can iOS 15)", !/IPHONEOS_DEPLOYMENT_TARGET\s*=\s*(1[0-4]|[0-9])(\.|\s|$)/.test(gen));
 
+// C8: Apple HIG — toggle phải có vùng chạm ≥44pt (::before hit-area)
+const popupCss = rd("popup.css");
+const hasToggleHitArea = popupCss.includes(".toggle::before") &&
+    /\.toggle::before[^}]*min-height\s*:\s*44px/.test(popupCss.replace(/\r\n/g, "\n"));
+check("C8 toggle co vung cham >=44pt (::before hit-area, Apple HIG)", hasToggleHitArea);
+
+// C9: .btn và .dock-item có min-height ≥44px
+const hasBtnMinH  = /\.btn\s*\{[^}]*min-height\s*:\s*44px/.test(popupCss);
+const hasDockMinH = /\.dock-item\s*\{[^}]*min-height\s*:\s*44px/.test(popupCss);
+check("C9 .btn va .dock-item co min-height >=44px (Apple HIG)", hasBtnMinH && hasDockMinH);
+
+// C10: .setting-tile có min-height ≥56px (44pt nội dung + padding)
+const hasTileMinH = /\.setting-tile\s*\{[^}]*min-height\s*:\s*(5[6-9]|[6-9]\d)\s*px/.test(popupCss);
+check("C10 .setting-tile co min-height >=56px (Apple HIG tap target)", hasTileMinH);
+
 console.log(results.join("\n"));
 process.exitCode = results.some((x) => x.startsWith("FAIL")) ? 1 : 0;

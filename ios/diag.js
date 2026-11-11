@@ -11,7 +11,7 @@
 
     const schema = (window.__FG_DIAG_SCHEMA__ && typeof window.__FG_DIAG_SCHEMA__ === "object") ? window.__FG_DIAG_SCHEMA__ : {};
     const EVENTS = schema.events || {};
-    const LIMITS = Object.assign({ perEventPerMinute: 6, maxEventBytes: 512 }, schema.limits || {});
+    const LIMITS = Object.assign({ perEventPerMinute: 6, maxEventBytes: 512, maxPerEventPerMinute: 30 }, schema.limits || {});
     let enabled = window.__FG_DIAG_ENABLED__ !== false;
 
     // Ngưỡng có thể chỉnh trong test (TEST.diagCfg) để không phải chờ hàng chục giây.
@@ -59,7 +59,10 @@
         const now = Date.now();
         const w = windows[event] || (windows[event] = { start: now, n: 0 });
         if (now - w.start > 60000) { w.start = now; w.n = 0; }
-        if (w.n >= LIMITS.perEventPerMinute) return false;
+        // Mỗi loại có thể khai báo "limit" riêng trong schema (tối đa maxPerEventPerMinute); mặc định perEventPerMinute
+        const def = EVENTS[event];
+        const cap = Math.min((def && isInt(def.limit)) ? def.limit : LIMITS.perEventPerMinute, LIMITS.maxPerEventPerMinute);
+        if (w.n >= cap) return false;
         w.n++;
         return true;
     }
@@ -177,6 +180,19 @@
     document.addEventListener("timeupdate", onTimeupdate, true);
     document.addEventListener("seeked", onSeeked, true);
 
+    // 5) Trạng thái phát (play/pause/ended) kèm tab đang ẩn hay không và có đang là quảng cáo không:
+    //    giúp thấy "khoá máy / vuốt Home thì ai đã tạm dừng phát" (iOS, YouTube hay app).
+    function onMedia(ev) {
+        try {
+            const m = ev && ev.target;
+            if (!m || (m.tagName !== "VIDEO" && m.tagName !== "AUDIO")) return;
+            emit("media_state", { state: ev.type, hidden: !!document.hidden, ad: isAdShowing(playerEl()) });
+        } catch { /* ignore */ }
+    }
+    document.addEventListener("play", onMedia, true);
+    document.addEventListener("pause", onMedia, true);
+    document.addEventListener("ended", onMedia, true);
+
     // ---------- Thăm dò tương thích (1 lần/trang): chỉ cờ boolean + 2 bucket thô ----------
     function safe(fn) { try { return !!fn(); } catch { return false; } }
     function probe() {
@@ -208,7 +224,7 @@
     }
 
     window.__fgDiag = { emit: emit, validate: validate };
-    if (TEST) TEST.diag = { validate: validate, emit: emit, sample: sample, probe: probe, state: state, onSeeked: onSeeked, onTimeupdate: onTimeupdate, CFG: CFG };
+    if (TEST) TEST.diag = { validate: validate, emit: emit, sample: sample, probe: probe, state: state, onSeeked: onSeeked, onTimeupdate: onTimeupdate, onMedia: onMedia, CFG: CFG };
 
     if (!(TEST && TEST.diagNoTimers)) {
         setInterval(sample, CFG.sampleMs);

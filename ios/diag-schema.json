@@ -5,7 +5,8 @@
     "maxEntries": 200,
     "maxBytes": 65536,
     "maxEventBytes": 512,
-    "perEventPerMinute": 6
+    "perEventPerMinute": 6,
+    "maxPerEventPerMinute": 30
   },
   "events": {
     "app_launch": { "src": "swift", "fields": {} },
@@ -34,9 +35,34 @@
     },
     "audio_interrupt": {
       "src": "swift",
+      "limit": 24,
       "fields": {
         "type": { "t": "enum", "v": ["began", "ended"] },
-        "resume": { "t": "bool" }
+        "resume": { "t": "bool" },
+        "reason": { "t": "int", "min": 0, "max": 9 },
+        "state": { "t": "enum", "v": ["active", "inactive", "background"] }
+      }
+    },
+    "audio_route": {
+      "src": "swift",
+      "limit": 24,
+      "fields": {
+        "reason": { "t": "int", "min": 0, "max": 9 },
+        "state": { "t": "enum", "v": ["active", "inactive", "background"] }
+      }
+    },
+    "lifecycle": {
+      "src": "swift",
+      "limit": 24,
+      "fields": { "phase": { "t": "enum", "v": ["resign_active", "become_active", "enter_background", "enter_foreground"] } }
+    },
+    "media_state": {
+      "src": "js",
+      "limit": 24,
+      "fields": {
+        "state": { "t": "enum", "v": ["play", "pause", "ended"] },
+        "hidden": { "t": "bool" },
+        "ad": { "t": "bool" }
       }
     },
     "compat": {

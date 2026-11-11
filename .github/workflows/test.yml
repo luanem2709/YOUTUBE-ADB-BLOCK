@@ -18,10 +18,10 @@ jobs:
 
       - name: Kiểm tra cú pháp
         run: |
-          for f in background.js license.js content-main.js content.js content-spotify.js content-spotify-main.js content-yt-net.js popup.js options.js stats.js; do
+          for f in background.js license.js content-main.js content.js content-spotify.js content-spotify-main.js content-yt-net.js popup.js options.js stats.js ios/chrome-bridge.js ios/diag.js mobile/mobile-ui.js; do
             node --check "$f"
           done
-          node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); JSON.parse(require('fs').readFileSync('rules/dnr_rules.json','utf8')); JSON.parse(require('fs').readFileSync('release/remote-config.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); JSON.parse(require('fs').readFileSync('rules/dnr_rules.json','utf8')); JSON.parse(require('fs').readFileSync('release/remote-config.json','utf8')); JSON.parse(require('fs').readFileSync('ios/diag-schema.json','utf8'))"
 
       - name: Chạy toàn bộ test (Chrome headless)
         env:

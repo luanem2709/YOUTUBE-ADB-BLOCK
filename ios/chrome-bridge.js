@@ -545,7 +545,10 @@
         html.fg-block-banner ytm-promoted-video-renderer,
         html.fg-block-banner ytm-companion-ad-renderer,
         html.fg-block-banner ytm-ad-slot-renderer,
-        html.fg-block-banner ytm-in-feed-ad-layout-renderer,
+        html.fg-block-banner ytm-in-feed-ad-layout-renderer {
+            display: none !important;
+        }
+        /* Tách riêng :has() — iOS < 15.4 không hiểu sẽ bỏ cả rule nếu để chung nhóm */
         html.fg-block-banner ytm-rich-item-renderer:has(ytm-ad-slot-renderer),
         html.fg-block-banner ytm-reel-item-renderer:has(ytm-ad-slot-renderer) {
             display: none !important;

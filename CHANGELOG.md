@@ -1,5 +1,19 @@
 # Changelog
 
+## [Chưa phát hành] — Giai đoạn 0: vá bảo mật máy chủ key & installer
+
+### Bảo mật
+- **Chặn formula injection vào Google Sheet (`server/Code.gs`):** `hwid` và `user` từ internet được làm sạch (`sanitizeHwid_`: chỉ `[A-Za-z0-9._-]`, ≤64 ký tự; `sanitizeUser_`: chữ Latin/Việt, số, dấu cách `._-`, ≤40 ký tự; không bắt đầu bằng `= + - @`) và luôn ghi dưới dạng **văn bản thuần** (định dạng ô `@`). Hai hàm này idempotent nên mã máy đã lưu từ trước vẫn khớp.
+- **Không trả lỗi nội bộ cho client:** chi tiết lỗi chỉ ghi log; `waitLock` quá hạn trả JSON "máy chủ bận" thay vì trang lỗi.
+- **Key sinh ngẫu nhiên bằng `Utilities.getUuid()`** (loại độ lệch) thay cho bộ sinh số giả ngẫu nhiên thường.
+- **Gỡ key mẫu plaintext:** xoá `seedKeys_`/`seedKeys`; `keys.csv` không còn được theo dõi (thêm vào `.gitignore`, thay bằng `keys.example.csv` toàn dữ liệu giả).
+- **Installer:** bỏ bảng hash key cứng `LocalHashes` (mở khoá offline, không thu hồi được) và đường đọc CSV công khai của Google Sheet; thiếu máy chủ key thì không mở khoá (fail closed). **Phải phát hành installer mới và ngừng phân phối bản cũ** — bản cũ vẫn chấp nhận các hash cũ.
+- **Việc cần làm phía Google (không nằm trong mã):** đặt Sheet về "Restricted", vô hiệu hoá các dòng key mẫu, deploy lại `Code.gs` mới (runtime V8).
+
+### Test
+- `tests/server.test.js` thêm S12–S21 (công thức `=IMPORTXML`, `+cmd`, `@SUM`, `-2+3`, chuỗi dài, mã máy cũ, tên tiếng Việt/emoji, lỗi khoá hỏng, hết thời gian chờ khoá, phân bố key, đồng bộ hai bản `Code.gs`, fuzz 1500 chuỗi). Chạy trên `Code.gs` cũ thì S12, S13, S15, S16, S17, S19, S20, S21 **FAIL** (đã kiểm chứng).
+- `tests/secrets.test.js` (mới, chạy trong `npm test`/CI): không khoá riêng, token, key cấp phép thật, hash key cứng, link xuất CSV Sheet công khai, `keys.csv` trong file được git theo dõi.
+
 ## [2.4.15] — 2026-10-31
 
 ### Sửa — Rò rỉ bộ nhớ + giảm tải CPU (vòng quét thích ứng)

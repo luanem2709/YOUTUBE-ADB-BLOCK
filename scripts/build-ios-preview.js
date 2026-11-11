@@ -31,7 +31,7 @@ function buildEmbeddedPage(pageFile, unlocked = true) {
         enabled: true,
         licenseValid: unlocked,
         licenseExpires: "2027-12-31T23:59:59.000Z",
-        licenseKey: unlocked ? "FG-IOS-VIP-2026" : "",
+        licenseKey: unlocked ? "FG-DEMO-0000-0000" : "",
         adsBlocked: 128,
         dailyGoal: 50,
         whitelistChannels: ["@FAPTV", "@MixiGaming3con"],
@@ -85,7 +85,7 @@ function buildEmbeddedPage(pageFile, unlocked = true) {
         ${licenseContent}
         if (${unlocked ? "true" : "false"} && window.FG_LICENSE) {
             window.FG_LICENSE.ensureUnlocked = async () => ({ valid: true, expires: "2027-12-31T23:59:59.000Z" });
-            window.FG_LICENSE.getState = async () => ({ valid: true, key: "FG-IOS-VIP-2026", expires: "2027-12-31T23:59:59.000Z" });
+            window.FG_LICENSE.getState = async () => ({ valid: true, key: "FG-DEMO-0000-0000", expires: "2027-12-31T23:59:59.000Z" });
         }
     </script>`;
 

@@ -26,6 +26,10 @@ build/
 key.pem
 _metadata/
 
+# Danh sách key thật (xuất từ Google Sheet) — TUYỆT ĐỐI không commit; dùng keys.example.csv để minh hoạ định dạng
+installer/google-apps-script/keys.csv
+keys.csv
+
 # Trang test sinh tự động từ HTML gốc (tests/mkpopup.js, tests/mkpages.js)
 tests/popup.test.html
 tests/stats.test.html

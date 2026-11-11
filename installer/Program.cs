@@ -1592,22 +1592,8 @@ internal sealed class MainForm : Form
 internal static class AuthKey
 {
     private const string RegPath = @"Software\FUNNYGAME\Installer";
-    private const string SheetCsvUrl =
-        "https://docs.google.com/spreadsheets/d/1ITw6jYqtuIwDaXvx_GLPl4CUMCNDC7C-pTwJVmNXC8E/export?format=csv&gid=1159168714";
     // Dan URL Web app sau khi Deploy Google Apps Script (Deploy > Web app > Anyone).
     private const string ScriptUrl = "https://script.google.com/macros/s/AKfycbxaF75rDeLDET5E75ePiOwVzVSM0q6eiG5S4MkdBnfDGuHc80oZBmxSySAmVsoDFFR9/exec";
-
-    private static readonly HashSet<string> LocalHashes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "[REMOVED]",
-        "[REMOVED]",
-        "[REMOVED]",
-        "[REMOVED]",
-        "[REMOVED]",
-        "[REMOVED]",
-        "[REMOVED]",
-        "[REMOVED]",
-    };
 
     public static string LastError { get; private set; } = "";
     public static DateTime? LastExpiresDate { get; private set; }
@@ -1701,11 +1687,6 @@ internal static class AuthKey
         }
 
         var hash = HashOf(normalized);
-        if (LocalHashes.Contains(hash))
-        {
-            SaveUnlock(hash, normalized, null);
-            return true;
-        }
 
         var script = GetScriptUrl();
         if (!string.IsNullOrWhiteSpace(script))
@@ -1728,29 +1709,9 @@ internal static class AuthKey
             }
         }
 
-        try
-        {
-            var entries = await FetchSheetKeysAsync();
-            var match = entries.FirstOrDefault(e => e.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
-            if (match == null)
-            {
-                LastError = "Key authentic không đúng.";
-                return false;
-            }
-            if (match.RejectReason != null)
-            {
-                LastError = match.RejectReason;
-                return false;
-            }
-
-            SaveUnlock(hash, normalized, match.Expires);
-            return true;
-        }
-        catch (Exception)
-        {
-            LastError = "Không đọc được danh sách key. Cần Internet.";
-            return false;
-        }
+        // Không còn đường đọc danh sách key công khai: thiếu máy chủ key thì KHÔNG mở khoá (fail closed).
+        LastError = "Chưa cấu hình máy chủ key.";
+        return false;
     }
 
     public static async Task<bool> StillValidAsync()
@@ -1768,12 +1729,6 @@ internal static class AuthKey
 
         if (string.IsNullOrWhiteSpace(stored))
             return false;
-        if (LocalHashes.Contains(stored))
-        {
-            LastExpiresDate = null;
-            return true;
-        }
-
         string? keyNorm;
         using (var key = Registry.CurrentUser.OpenSubKey(RegPath))
             keyNorm = key?.GetValue("KeyNorm") as string;
@@ -1794,15 +1749,8 @@ internal static class AuthKey
             return false;
         }
 
-        var entries = await FetchSheetKeysAsync();
-        var match = entries.FirstOrDefault(e => e.Hash.Equals(stored, StringComparison.OrdinalIgnoreCase));
-        if (match != null && match.RejectReason == null)
-        {
-            LastExpiresDate = match.Expires;
-            LastError = "";
-            return true;
-        }
-        LastError = match?.RejectReason ?? "Key authentic không đúng.";
+        // Không có key đã lưu hoặc không có máy chủ: không chấp nhận (không còn đọc CSV công khai).
+        LastError = "Key authentic không đúng.";
         return false;
     }
 
@@ -1911,73 +1859,6 @@ internal static class AuthKey
     private static string HashOf(string normalized) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant();
 
-    private sealed record SheetKey(string Hash, string? RejectReason, DateTime? Expires = null);
-
-    private static async Task<List<SheetKey>> FetchSheetKeysAsync()
-    {
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) FUNNYGAME");
-        using var response = await http.GetAsync(SheetCsvUrl);
-        var csv = await response.Content.ReadAsStringAsync();
-        if (!response.IsSuccessStatusCode || LooksLikeLoginPage(csv))
-            throw new InvalidOperationException("sheet-private");
-
-        var result = new List<SheetKey>();
-        var rows = ParseCsv(csv);
-        if (rows.Count == 0)
-            return result;
-
-        var header = rows[0].Select(Fold).ToArray();
-        var keyCol = IndexOfHeader(header, "key", "ma", "code", "authentic", "license", "serial");
-        var statusCol = IndexOfHeader(header, "status", "trang thai", "state");
-        var expiresCol = IndexOfHeader(header, "expires", "expire", "han su dung", "het han");
-        var daysCol = IndexOfHeader(header, "days", "ngay");
-        var createdCol = IndexOfHeader(header, "created", "tao", "bat dau", "start");
-        if (keyCol < 0) keyCol = 0;
-
-        var start = LooksLikeHeader(header) ? 1 : 0;
-        var today = DateTime.Today;
-        for (var i = start; i < rows.Count; i++)
-        {
-            var row = rows[i];
-            if (keyCol >= row.Length) continue;
-            var normalized = Normalize(row[keyCol]);
-            if (normalized.Length < 8) continue;
-            var hash = HashOf(normalized);
-
-            if (statusCol >= 0 && statusCol < row.Length && IsDisabledStatus(row[statusCol]))
-            {
-                result.Add(new SheetKey(hash, "Key đã bị khóa hoặc hết lượt."));
-                continue;
-            }
-
-            DateTime? created = null;
-            if (createdCol >= 0 && createdCol < row.Length && TryParseSheetDate(row[createdCol], out var createdAt))
-                created = createdAt.Date;
-            if (created != null && created > today)
-            {
-                result.Add(new SheetKey(hash, "Key chưa tới ngày bắt đầu."));
-                continue;
-            }
-
-            DateTime? expires = null;
-            if (expiresCol >= 0 && expiresCol < row.Length && TryParseSheetDate(row[expiresCol], out var exp))
-                expires = exp.Date;
-            else if (daysCol >= 0 && created != null && daysCol < row.Length
-                     && int.TryParse(row[daysCol].Trim(), out var days) && days > 0)
-                expires = created.Value.AddDays(days);
-
-            if (expires != null && expires < today)
-            {
-                result.Add(new SheetKey(hash, "Key đã hết hạn."));
-                continue;
-            }
-
-            result.Add(new SheetKey(hash, null, expires));
-        }
-        return result;
-    }
-
     private static bool TryParseSheetDate(string value, out DateTime date)
     {
         date = default;
@@ -1988,102 +1869,5 @@ internal static class AuthKey
             return true;
         return DateTime.TryParse(text, CultureInfo.GetCultureInfo("vi-VN"), DateTimeStyles.None, out date)
             || DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
-    }
-
-    private static bool LooksLikeLoginPage(string text) =>
-        text.Contains("<html", StringComparison.OrdinalIgnoreCase)
-        || text.Contains("Đăng nhập", StringComparison.OrdinalIgnoreCase)
-        || text.Contains("accounts.google.com", StringComparison.OrdinalIgnoreCase);
-
-    private static bool LooksLikeHeader(string[] header) =>
-        header.Any(h => h is "key" or "ma" or "mã" or "code" or "authentic" or "license"
-            or "status" or "trang thai" or "trạng thái");
-
-    private static int IndexOfHeader(string[] header, params string[] names)
-    {
-        for (var i = 0; i < header.Length; i++)
-        {
-            foreach (var name in names)
-            {
-                if (header[i] == name || header[i].Contains(name))
-                    return i;
-            }
-        }
-        return -1;
-    }
-
-    private static bool IsDisabledStatus(string status)
-    {
-        var s = Fold(status);
-        if (string.IsNullOrWhiteSpace(s)) return false;
-        return s is "banned" or "disabled" or "revoked" or "used" or "het" or "expired"
-            or "expire" or "khoa" or "lock" or "inactive" or "no" or "false" or "0";
-    }
-
-    private static string Fold(string value)
-    {
-        var formD = (value ?? "").Trim().Normalize(NormalizationForm.FormD);
-        var sb = new StringBuilder(formD.Length);
-        foreach (var ch in formD)
-        {
-            var cat = CharUnicodeInfo.GetUnicodeCategory(ch);
-            if (cat != UnicodeCategory.NonSpacingMark)
-                sb.Append(ch);
-        }
-        return sb.ToString().Normalize(NormalizationForm.FormC).ToLowerInvariant();
-    }
-
-    private static List<string[]> ParseCsv(string text)
-    {
-        var rows = new List<string[]>();
-        var row = new List<string>();
-        var cell = new StringBuilder();
-        var quoted = false;
-        text = text.Replace("\r\n", "\n").Replace('\r', '\n').Trim('\uFEFF');
-
-        for (var i = 0; i < text.Length; i++)
-        {
-            var ch = text[i];
-            if (quoted)
-            {
-                if (ch == '"')
-                {
-                    if (i + 1 < text.Length && text[i + 1] == '"')
-                    {
-                        cell.Append('"');
-                        i++;
-                    }
-                    else quoted = false;
-                }
-                else cell.Append(ch);
-                continue;
-            }
-
-            switch (ch)
-            {
-                case '"':
-                    quoted = true;
-                    break;
-                case ',':
-                    row.Add(cell.ToString());
-                    cell.Clear();
-                    break;
-                case '\n':
-                    row.Add(cell.ToString());
-                    cell.Clear();
-                    if (row.Any(v => !string.IsNullOrWhiteSpace(v)))
-                        rows.Add(row.ToArray());
-                    row = new List<string>();
-                    break;
-                default:
-                    cell.Append(ch);
-                    break;
-            }
-        }
-
-        row.Add(cell.ToString());
-        if (row.Any(v => !string.IsNullOrWhiteSpace(v)))
-            rows.Add(row.ToArray());
-        return rows;
     }
 }

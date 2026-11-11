@@ -69,6 +69,8 @@ Từ v2.4.0 key được **ký số RSA**. Cách cập nhật máy chủ (làm 1
 2. **Project Settings → Script Properties → Add property**
    - Tên: `LICENSE_PRIVATE_KEY`
    - Giá trị: toàn bộ nội dung file `build/license-private.pem` (chỉ có trên máy bạn, đã bị `.gitignore` — **sao lưu cẩn thận, mất là phải phát hành lại extension với khóa mới**)
+   - **Sheet license phải ở chế độ Restricted** (Share → General access: Restricted). Web app Apps Script chạy dưới quyền chủ sở hữu nên vẫn đọc được. Runtime Apps Script phải là **V8**.
+   - **Không commit danh sách key thật** (`keys.csv` đã bị `.gitignore`; xem `installer/google-apps-script/keys.example.csv`). `npm test` có `tests/secrets.test.js` kiểm tra điều này.
 3. Chọn hàm `testSign` → **Run** để kiểm tra (log ra `token` và `sig`)
 4. **Deploy → Manage deployments → Edit → Version: New version → Deploy** (giữ nguyên URL)
 

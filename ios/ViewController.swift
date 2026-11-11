@@ -39,6 +39,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     private var cachedSessionDict: [String: Any] = [:]
     private var cachedLocalJson: String = "{}"
     private var cachedSessionJson: String = "{}"
+    private var terminateTimes: [TimeInterval] = []
 
     private let storageKeyLocal = "fg_chrome_storage_local_v1"
     private let storageKeySession = "fg_chrome_storage_session_v1"
@@ -66,6 +67,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         }
 
         loadInitialStorageCache()
+        configureDiagnostics()
         lightHaptic.prepare()
         mediumHaptic.prepare()
         compileNativeContentBlocker()
@@ -85,6 +87,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
+        DiagLog.shared.record("memory_warning", ["tabs": webViews.count])
         resCache.removeAll()
         // Giải phóng các tab phụ đang ẩn nếu thiết bị thiếu RAM (giữ nguyên tab đang xem)
         for (idx, wv) in webViews where idx != activeTabIndex {
@@ -216,6 +219,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     @objc private func onDidEnterBackground() {
+        DiagLog.shared.flush()
         configureAudioSession()
         if bgTask == .invalid {
             bgTask = UIApplication.shared.beginBackgroundTask(withName: "FUNNYGAMEAudioKeepAlive") { [weak self] in
@@ -258,6 +262,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         guard let info = notification.userInfo,
               let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
+        let optVal = (info[AVAudioSessionInterruptionOptionKey] as? UInt) ?? 0
+        let shouldResume = AVAudioSession.InterruptionOptions(rawValue: optVal).contains(.shouldResume)
+        DiagLog.shared.record("audio_interrupt", ["type": type == .began ? "began" : "ended", "resume": shouldResume])
         if type == .ended {
             configureAudioSession()
             if isBackgroundPlayEnabled() {
@@ -451,6 +458,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         let ytLogoDataUrl = readResBase64("fg-logo-yt.png", mime: "image/png")
         let iconDataUrl = readResBase64("icon48.png", mime: "image/png")
         let safeMainUrl = mainUrl.replacingOccurrences(of: "\"", with: "\\\"")
+        let diagSchema = DiagLog.shared.schemaJSON
+        let diagEnabled = DiagLog.shared.isEnabled ? "true" : "false"
         return """
         window.__FG_IOS_INITIAL_STORAGE__ = \(localJson);
         window.__FG_IOS_INITIAL_SESSION__ = \(sessionJson);
@@ -459,6 +468,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         window.__FG_IOS_LOGO_DATA_URL__ = "\(logoDataUrl)";
         window.__FG_IOS_YT_LOGO_DATA_URL__ = "\(ytLogoDataUrl)";
         window.__FG_IOS_ICON_DATA_URL__ = "\(iconDataUrl)";
+        window.__FG_DIAG_SCHEMA__ = \(diagSchema);
+        window.__FG_DIAG_ENABLED__ = \(diagEnabled);
         """
     }
 
@@ -491,9 +502,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         let bootstrap = buildBootstrapScript(mainUrl: currentUrl)
         let bridgeJs = readResString("chrome-bridge.js")
         let licenseJs = readResString("license.js")
+        let diagJs = forPanel ? "" : readResString("diag.js")
 
         ucc.addUserScript(WKUserScript(
-            source: bootstrap + "\n" + bridgeJs + "\n" + licenseJs,
+            source: bootstrap + "\n" + bridgeJs + "\n" + diagJs + "\n" + licenseJs,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
@@ -846,6 +858,112 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         }
     }
 
+    // ---------- Nhật ký chẩn đoán cục bộ (không dữ liệu nhận dạng — xem DiagLog & ios/diag-schema.json) ----------
+    private func configureDiagnostics() {
+        // Nạp schema TRƯỚC khi tạo WebView đầu tiên để bootstrap có sẵn schema cho JS
+        DiagLog.shared.configure(schemaJSON: readResString("diag-schema.json"))
+        let osParts = UIDevice.current.systemVersion.split(separator: ".").prefix(3).map { String($0) }
+        let idiom: String
+        switch UIDevice.current.userInterfaceIdiom {
+        case .phone: idiom = "phone"
+        case .pad: idiom = "pad"
+        default: idiom = "other"
+        }
+        DiagLog.shared.record("app_launch")
+        DiagLog.shared.record("env", ["os": osParts.joined(separator: "."), "idiom": idiom, "app": "2.4.15"])
+    }
+
+    private func tabIndex(for webView: WKWebView?) -> Int? {
+        guard let webView = webView else { return nil }
+        for (idx, wv) in webViews where wv === webView { return idx }
+        return nil
+    }
+
+    private func tabName(for webView: WKWebView?) -> String {
+        guard let webView = webView else { return "other" }
+        if let p = panelWebView, p === webView { return "panel" }
+        switch tabIndex(for: webView) {
+        case .some(0): return "yt"
+        case .some(1): return "music"
+        case .some(2): return "spotify"
+        default: return "other"
+        }
+    }
+
+    private func isTabWebView(_ wv: WKWebView) -> Bool {
+        return tabIndex(for: wv) != nil
+    }
+
+    /// Lệnh điều khiển nhật ký (xuất/xoá/bật-tắt/trạng thái) CHỈ được nhận từ bảng điều khiển native, không nhận từ trang web.
+    private func isPanelMessage(_ message: WKScriptMessage) -> Bool {
+        guard let p = panelWebView, let wv = message.webView else { return false }
+        return wv === p
+    }
+
+    /// Sự kiện chẩn đoán từ JS chỉ chấp nhận khi trang đang ở YouTube/Spotify.
+    private func isAllowedDiagHost(_ host: String?) -> Bool {
+        guard let h = host?.lowercased() else { return false }
+        for base in ["youtube.com", "spotify.com"] where h == base || h.hasSuffix("." + base) { return true }
+        return false
+    }
+
+    private func pushDiagStatus() {
+        DiagLog.shared.status { [weak self] count, bytes in
+            let enabled = DiagLog.shared.isEnabled ? "true" : "false"
+            let js = "if (window.__fgDiagStatus) window.__fgDiagStatus({enabled:\(enabled),count:\(count),bytes:\(bytes)});"
+            self?.panelWebView?.evaluateJavaScript(js, completionHandler: nil)
+        }
+    }
+
+    private func broadcastDiagEnabled(_ on: Bool) {
+        let flag = on ? "true" : "false"
+        let js = "if (window.__fgDiagSetEnabled) window.__fgDiagSetEnabled(\(flag));"
+        for (_, wv) in webViews { wv.evaluateJavaScript(js, completionHandler: nil) }
+    }
+
+    private func presentDiagExport() {
+        DiagLog.shared.exportText { [weak self] text in
+            guard let self = self else { return }
+            let avc = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+            if let pop = avc.popoverPresentationController {
+                pop.sourceView = self.view
+                pop.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 1, height: 1)
+            }
+            self.present(avc, animated: true, completion: nil)
+        }
+    }
+
+    // ---------- Vòng đời WKWebView: iOS kill tiến trình WebContent, lỗi điều hướng ----------
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        // iOS kill tiến trình WebContent (thiếu RAM...): trang trắng/đơ. Tự nạp lại, nhưng chặn vòng lặp (>2 lần/30 giây).
+        let now = Date().timeIntervalSince1970
+        terminateTimes = terminateTimes.filter { now - $0 < 30 } + [now]
+        let canReload = terminateTimes.count <= 2
+        DiagLog.shared.record("web_terminated", ["tab": tabName(for: webView), "reloaded": canReload])
+        guard canReload else { return }
+        if let url = webView.url {
+            webView.load(URLRequest(url: url))
+        } else if let idx = tabIndex(for: webView), let fallback = URL(string: tabUrls[idx]) {
+            webView.load(URLRequest(url: fallback))
+        } else {
+            webView.reload()
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        logNavFail(webView, error)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        logNavFail(webView, error)
+    }
+
+    private func logNavFail(_ webView: WKWebView, _ error: Error) {
+        let code = (error as NSError).code
+        if code == NSURLErrorCancelled { return } // người dùng/trang tự huỷ điều hướng: không phải lỗi
+        DiagLog.shared.record("nav_fail", ["tab": tabName(for: webView), "code": code])
+    }
+
     // ---------- Chặn Deep-Link sang App YouTube / Spotify gốc & Hỗ trợ OAuth Google ----------
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else {
@@ -1181,6 +1299,28 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
               let action = body["action"] as? String else { return }
 
         switch action {
+        case "diag":
+            // Sự kiện tự chẩn đoán từ JS: chỉ nhận từ khung chính của tab YouTube/Spotify (không phải bảng điều khiển/trang lạ)
+            guard message.frameInfo.isMainFrame,
+                  let wv = message.webView, isTabWebView(wv),
+                  isAllowedDiagHost(message.frameInfo.request.url?.host),
+                  let ev = body["e"] as? String,
+                  let fields = body["f"] as? [String: Any] else { return }
+            DiagLog.shared.record(ev, fields, tab: tabName(for: wv), fromJS: true)
+        case "diagStatus":
+            guard isPanelMessage(message) else { return }
+            pushDiagStatus()
+        case "diagExport":
+            guard isPanelMessage(message) else { return }
+            presentDiagExport()
+        case "diagClear":
+            guard isPanelMessage(message) else { return }
+            DiagLog.shared.clear { [weak self] in self?.pushDiagStatus() }
+        case "diagSetEnabled":
+            guard isPanelMessage(message), let on = body["on"] as? Bool else { return }
+            DiagLog.shared.setEnabled(on)
+            broadcastDiagEnabled(on)
+            pushDiagStatus()
         case "storageSet":
             let area = (body["area"] as? String) ?? "local"
             if let patch = body["patch"] as? [String: Any] {
@@ -1297,6 +1437,227 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             }
         default:
             break
+        }
+    }
+}
+
+// MARK: - Nhật ký chẩn đoán cục bộ
+// Nguồn sự thật: ios/diag-schema.json (cũng được tiêm sang JS). Schema không có trường văn bản tự do nên KHÔNG thể ghi
+// địa chỉ trang, mã video, key, IP hay mã thiết bị. Chỉ lưu trên máy (Application Support, loại khỏi sao lưu iCloud);
+// lớp này không chứa bất kỳ mã mạng nào. Người dùng tự xuất/xoá từ bảng Cài đặt.
+final class DiagLog {
+    static let shared = DiagLog()
+
+    private enum Rule {
+        case enumeration([String])
+        case integer(Int, Int)
+        case boolean
+        case pattern(NSRegularExpression)
+    }
+
+    private struct EventDef {
+        let fromJS: Bool
+        let fields: [String: Rule]
+    }
+
+    private let queue = DispatchQueue(label: "com.funnygame.diag", qos: .utility)
+    private let enabledKey = "fg_diag_enabled_v1"
+    private var events: [String: EventDef] = [:]
+    private var maxEntries = 200
+    private var maxBytes = 65536
+    private var maxEventBytes = 512
+    private var perEventPerMinute = 6
+    private var entries: [String] = []
+    private var totalBytes = 0
+    private var windows: [String: (start: TimeInterval, count: Int)] = [:]
+    private var saveWork: DispatchWorkItem?
+    private let fileURL: URL
+    private(set) var schemaJSON: String = "{}"
+
+    /// Mặc định BẬT (chỉ lưu cục bộ); người dùng tắt được trong Cài đặt.
+    var isEnabled: Bool {
+        if UserDefaults.standard.object(forKey: enabledKey) == nil { return true }
+        return UserDefaults.standard.bool(forKey: enabledKey)
+    }
+
+    private init() {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        var dir = base.appendingPathComponent("FUNNYGAME", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? dir.setResourceValues(values)
+        fileURL = dir.appendingPathComponent("diag.log")
+        if let text = try? String(contentsOf: fileURL, encoding: .utf8) {
+            entries = text.split(separator: "\n").map { String($0) }.filter { !$0.isEmpty }
+            totalBytes = entries.reduce(0) { $0 + $1.utf8.count + 1 }
+        }
+    }
+
+    /// Nạp schema (gọi trên main thread, trước khi tạo WebView). Schema hỏng/thiếu ⇒ bỏ mọi sự kiện (an toàn).
+    func configure(schemaJSON raw: String) {
+        guard let data = raw.data(using: .utf8),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let evs = root["events"] as? [String: Any] else {
+            queue.sync { self.events = [:] }
+            schemaJSON = "{}"
+            return
+        }
+        var parsed: [String: EventDef] = [:]
+        for (name, anyDef) in evs {
+            guard let def = anyDef as? [String: Any], let src = def["src"] as? String else { continue }
+            var fields: [String: Rule] = [:]
+            var valid = true
+            let fdefs = (def["fields"] as? [String: Any]) ?? [:]
+            for (fname, anyRule) in fdefs {
+                guard let r = anyRule as? [String: Any], let kind = r["t"] as? String else { valid = false; break }
+                switch kind {
+                case "enum":
+                    if let vals = r["v"] as? [String], !vals.isEmpty { fields[fname] = .enumeration(vals) } else { valid = false }
+                case "int":
+                    if let lo = r["min"] as? Int, let hi = r["max"] as? Int, lo <= hi { fields[fname] = .integer(lo, hi) } else { valid = false }
+                case "bool":
+                    fields[fname] = .boolean
+                case "pattern":
+                    if let re = r["re"] as? String, let rx = try? NSRegularExpression(pattern: re) { fields[fname] = .pattern(rx) } else { valid = false }
+                default:
+                    valid = false
+                }
+                if !valid { break }
+            }
+            if valid { parsed[name] = EventDef(fromJS: src == "js", fields: fields) }
+        }
+        let lim = (root["limits"] as? [String: Any]) ?? [:]
+        queue.sync {
+            self.events = parsed
+            self.maxEntries = (lim["maxEntries"] as? Int) ?? 200
+            self.maxBytes = (lim["maxBytes"] as? Int) ?? 65536
+            self.maxEventBytes = (lim["maxEventBytes"] as? Int) ?? 512
+            self.perEventPerMinute = (lim["perEventPerMinute"] as? Int) ?? 6
+        }
+        if let out = try? JSONSerialization.data(withJSONObject: root), let s = String(data: out, encoding: .utf8) {
+            schemaJSON = s
+        } else {
+            schemaJSON = "{}"
+        }
+    }
+
+    func setEnabled(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: enabledKey)
+    }
+
+    /// Ghi 1 sự kiện. Sự kiện/trường ngoài schema, giá trị sai kiểu/khoảng, hoặc sai nguồn (JS giả sự kiện của Swift) bị bỏ.
+    func record(_ event: String, _ raw: [String: Any] = [:], tab: String? = nil, fromJS: Bool = false) {
+        guard isEnabled else { return }
+        queue.async { [weak self] in
+            self?.append(event, raw, tab: tab, fromJS: fromJS)
+        }
+    }
+
+    private func append(_ event: String, _ raw: [String: Any], tab: String?, fromJS: Bool) {
+        guard let def = events[event], def.fromJS == fromJS else { return }
+        var clean: [String: Any] = [:]
+        for (key, rule) in def.fields {
+            guard let value = raw[key] else { continue }
+            guard let ok = validated(value, rule) else { return } // giá trị lạ ⇒ bỏ cả sự kiện
+            clean[key] = ok
+        }
+        // Giới hạn tần suất theo loại sự kiện (chống trang độc hại làm tràn nhật ký)
+        let now = Date().timeIntervalSince1970
+        var w = windows[event] ?? (start: now, count: 0)
+        if now - w.start > 60 { w = (start: now, count: 0) }
+        if w.count >= perEventPerMinute { windows[event] = w; return }
+        w.count += 1
+        windows[event] = w
+
+        var entry: [String: Any] = ["t": Int(now), "e": event, "f": clean]
+        if let tab = tab { entry["tab"] = tab }
+        guard let data = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]),
+              data.count <= maxEventBytes,
+              let line = String(data: data, encoding: .utf8) else { return }
+        entries.append(line)
+        totalBytes += data.count + 1
+        while entries.count > maxEntries || totalBytes > maxBytes {
+            guard let first = entries.first else { break }
+            entries.removeFirst()
+            totalBytes -= first.utf8.count + 1
+        }
+        scheduleSave()
+    }
+
+    private func validated(_ value: Any, _ rule: Rule) -> Any? {
+        switch rule {
+        case .boolean:
+            guard let n = value as? NSNumber, CFGetTypeID(n) == CFBooleanGetTypeID() else { return nil }
+            return n.boolValue
+        case .integer(let lo, let hi):
+            guard let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() else { return nil }
+            let d = n.doubleValue
+            guard d == d.rounded(), d >= Double(lo), d <= Double(hi) else { return nil }
+            return Int(d)
+        case .enumeration(let allowed):
+            guard let s = value as? String, allowed.contains(s) else { return nil }
+            return s
+        case .pattern(let rx):
+            guard let s = value as? String, s.count <= 24 else { return nil }
+            let range = NSRange(location: 0, length: (s as NSString).length)
+            guard rx.firstMatch(in: s, options: [], range: range) != nil else { return nil }
+            return s
+        }
+    }
+
+    private func scheduleSave() {
+        saveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.writeFile() }
+        saveWork = work
+        queue.asyncAfter(deadline: .now() + 2.0, execute: work)
+    }
+
+    private func writeFile() {
+        try? entries.joined(separator: "\n").write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Ghi ngay xuống đĩa (gọi khi app vào nền).
+    func flush() {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.saveWork?.cancel()
+            self.writeFile()
+        }
+    }
+
+    func clear(completion: (() -> Void)? = nil) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.saveWork?.cancel()
+            self.entries.removeAll()
+            self.totalBytes = 0
+            self.windows.removeAll()
+            try? FileManager.default.removeItem(at: self.fileURL)
+            DispatchQueue.main.async { completion?() }
+        }
+    }
+
+    func status(_ completion: @escaping (Int, Int) -> Void) {
+        queue.async { [weak self] in
+            let count = self?.entries.count ?? 0
+            let bytes = self?.totalBytes ?? 0
+            DispatchQueue.main.async { completion(count, bytes) }
+        }
+    }
+
+    /// Nội dung để người dùng tự chia sẻ (qua bảng chia sẻ của iOS — ứng dụng không tự gửi đi đâu).
+    func exportText(_ completion: @escaping (String) -> Void) {
+        let os = UIDevice.current.systemVersion
+        let idiom = UIDevice.current.userInterfaceIdiom == .pad ? "pad" : "phone"
+        let enabled = isEnabled ? "bat" : "tat"
+        queue.async { [weak self] in
+            let lines = self?.entries ?? []
+            let header = "FUNNYGAME chẩn đoán v1\napp=2.4.15 os=\(os) idiom=\(idiom) ghi=\(enabled) so_su_kien=\(lines.count)\n"
+                + "Không chứa địa chỉ video, key, IP hay mã thiết bị. Chỉ lưu trên máy này.\n---\n"
+            let text = header + lines.joined(separator: "\n") + "\n"
+            DispatchQueue.main.async { completion(text) }
         }
     }
 }

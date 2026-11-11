@@ -74,6 +74,10 @@ Từ v2.4.0 key được **ký số RSA**. Cách cập nhật máy chủ (làm 1
 3. Chọn hàm `testSign` → **Run** để kiểm tra (log ra `token` và `sig`)
 4. **Deploy → Manage deployments → Edit → Version: New version → Deploy** (giữ nguyên URL)
 
+## Chẩn đoán trên iOS (cục bộ, không dữ liệu nhận dạng)
+
+App iOS có nhật ký chẩn đoán **chỉ lưu trên máy**, không tự gửi đi. Bật/tắt, **Xuất chẩn đoán** và **Xoá nhật ký** nằm trong Cài đặt → "Chẩn đoán (iPhone)". Định dạng được khoá bởi [`ios/diag-schema.json`](ios/diag-schema.json): chỉ gồm sự kiện kỹ thuật (mở app, cảnh báo bộ nhớ, WebContent bị kill, lỗi tải trang, kẹt quảng cáo, lỗi trình phát), phiên bản iOS chính.phụ, iPhone/iPad và các cờ tương thích — **không** có địa chỉ trang, mã video, key, IP hay mã thiết bị. Sàn hỗ trợ: **iOS 15.0** (`tests/compat.test.js` chặn mã dùng tính năng mới hơn mà không có dự phòng).
+
 ## Cấu hình từ xa
 
 Khi YouTube/Spotify đổi giao diện, thêm selector vào [`release/remote-config.json`](release/remote-config.json), tăng `version`, rồi push — mọi máy nhận trong ≤6 giờ.

@@ -113,6 +113,9 @@ echo "==> Đã biên dịch: $APP_PATH"
 mkdir -p "$APP_PATH/fg-ext"
 cp -R "$EXT_SRC/"* "$APP_PATH/fg-ext/"
 cp "$ROOT_DIR/ios/chrome-bridge.js" "$APP_PATH/fg-ext/chrome-bridge.js"
+# Nhật ký chẩn đoán cục bộ: mã JS + schema dùng chung cho Swift và JS
+cp "$ROOT_DIR/ios/diag.js" "$APP_PATH/fg-ext/diag.js"
+cp "$ROOT_DIR/ios/diag-schema.json" "$APP_PATH/fg-ext/diag-schema.json"
 
 # Cập nhật icon ứng dụng từ icon128.png
 if [ -f "$ROOT_DIR/images/icon128.png" ]; then

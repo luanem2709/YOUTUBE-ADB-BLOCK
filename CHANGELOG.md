@@ -1,5 +1,26 @@
 # Changelog
 
+## [Chưa phát hành] — Giai đoạn 1: nhật ký chẩn đoán cục bộ + tương thích iOS 15
+
+### Thêm — Nhật ký chẩn đoán (iOS), không dữ liệu nhận dạng
+- **`ios/diag-schema.json`** là nguồn sự thật duy nhất; Swift (`DiagLog`) và JS (`ios/diag.js`) cùng đọc. Schema **không có trường văn bản tự do** (chỉ enum, số nguyên có khoảng, boolean, chuỗi khớp mẫu chặt) ⇒ không thể ghi địa chỉ trang, mã video, key, IP hay mã thiết bị. Sự kiện/trường ngoài schema bị bỏ.
+- **Chỉ lưu trên máy** (Application Support, loại khỏi sao lưu), tối đa 200 sự kiện / 64 KB, ≤ 6 sự kiện mỗi loại mỗi phút; không có mã mạng nào. Mặc định **bật**; Cài đặt → "Chẩn đoán (iPhone)" có công tắc, nút **Xuất chẩn đoán** (bảng chia sẻ iOS, người dùng tự chọn nơi gửi) và **Xoá nhật ký**.
+- **Sự kiện native:** mở app, môi trường (phiên bản iOS chính.phụ, iPhone/iPad, bản app), cảnh báo bộ nhớ, tiến trình WebContent bị iOS kill, lỗi điều hướng, gián đoạn âm thanh.
+- **Tự chẩn đoán JS:** kẹt quảng cáo (20s/60s/180s), tua nhanh bị kẹt (≥8x khi không có QC), lỗi trình phát, nghi ngờ nhận diện nhầm QC (video chính bị ẩn/mute rồi nhảy sát cuối), và thăm dò tương thích (cờ boolean: `:has()`, `dvh`, PiP, `AudioContext`, MSE, VP9/AV1/AVC/Opus/HLS…).
+- **Chặn nguồn:** sự kiện từ trang chỉ nhận từ khung chính của tab YouTube/Spotify; lệnh xuất/xoá/bật-tắt chỉ nhận từ bảng điều khiển native.
+
+### Sửa — Tiến trình WebContent bị iOS kill
+- Trước đây app không có `webViewWebContentProcessDidTerminate` nên trang trắng/đơ không tự phục hồi. Nay tự nạp lại (chặn vòng lặp: tối đa 2 lần / 30 giây) và ghi sự kiện chẩn đoán.
+
+### Sửa — Tương thích iOS 15.0–15.3 (sàn hỗ trợ: iOS 15.0)
+- **`:has()` tách khỏi nhóm selector** (`content.css` ×2 rule, CSS nhúng trong `chrome-bridge.js` ×1 rule): trình duyệt chưa hỗ trợ (iOS < 15.4) bỏ **cả rule** nếu selector này nằm chung nhóm, kéo theo ~40 selector chặn banner/upsell (gồm cả YT Music và `m.youtube.com`).
+- `100dvh` có dự phòng `100vh`; `-webkit-backdrop-filter` cho `popup.css`.
+
+### Test / CI
+- `tests/diag.html` (25 kiểm tra), `tests/diag.test.js` (17: schema, từ chối URL/mã video/key/IP/UUID, khớp Swift↔JS↔schema, kiểm soát nguồn tin nhắn), `tests/compat.test.js` (7; cổng tương thích iOS 15.0 — đã kiểm chứng **FAIL đúng 3 lỗi thật** trước khi sửa), `tests/mkpopup.js` thêm Q1–Q6. Chưa đo chi phí chạy của chẩn đoán (runner dùng thời gian ảo); cần đo trên thiết bị.
+- CI: `node --check` thêm `ios/chrome-bridge.js`, `ios/diag.js`, `mobile/mobile-ui.js` (trước đây không được kiểm tra) và kiểm tra JSON schema.
+- **Giới hạn:** phần Swift không chạy được test trên Windows; chỉ kiểm bằng bộ test tĩnh ở trên + build trên macOS (GitHub Actions) + máy thật.
+
 ## [Chưa phát hành] — Giai đoạn 0: vá bảo mật máy chủ key & installer
 
 ### Bảo mật

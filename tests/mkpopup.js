@@ -154,6 +154,30 @@ const RUN = `
             check("P10 dat lai thong ke -> adsBlocked = 0", _store.adsBlocked === 0, "adsBlocked=" + _store.adsBlocked);
             check("P11 userStats van la struct hop le", !!_store.userStats && !!_store.userStats.users);
 
+            // ---- Chan doan (iOS): the an khi khong co cau noi native, hien + gui dung lenh khi co ----
+            const card = document.getElementById("diagCard");
+            check("Q1 the Chan doan an khi khong co cau noi native (extension desktop)", !!card && card.style.display === "none");
+            const posted = [];
+            window.webkit = { messageHandlers: { fgBridge: { postMessage: (m) => posted.push(m) } } };
+            window.__fgInitDiagCard();
+            check("Q2 co cau noi native -> the Chan doan hien va hoi trang thai", card.style.display !== "none" && posted.some((m) => m.action === "diagStatus"));
+            window.__fgDiagStatus({ enabled: true, count: 12, bytes: 2048 });
+            const stTxt = document.getElementById("diagStatus").textContent;
+            check("Q3 hien trang thai tu Swift (12 su kien, 2 KB)", /12 sự kiện/.test(stTxt) && /2 KB/.test(stTxt), stTxt);
+            document.getElementById("diagExportBtn").click();
+            const dgEn = document.getElementById("diagEnabled");
+            dgEn.checked = false; dgEn.dispatchEvent(new Event("change"));
+            document.getElementById("diagClearBtn").click();
+            check("Q4 nut Xuat / bat-tat / Xoa gui dung lenh sang Swift",
+                posted.some((m) => m.action === "diagExport") &&
+                posted.some((m) => m.action === "diagSetEnabled" && m.on === false) &&
+                posted.some((m) => m.action === "diagClear"), JSON.stringify(posted.map((m) => m.action)));
+            window.__fgInitDiagCard();
+            document.getElementById("diagExportBtn").click();
+            check("Q5 khoi tao lai the khong gan trung su kien (2 lan bam = 2 lenh)", posted.filter((m) => m.action === "diagExport").length === 2);
+            check("Q6 khong co loi runtime khi dung the Chan doan", !hasRuntimeErr());
+
+
             document.getElementById("out").textContent = results.join("\\n");
         } catch (e) {
             results.push("FAIL exception: " + (e && e.stack || e));

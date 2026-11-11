@@ -636,6 +636,7 @@ body {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-xl);
+    -webkit-backdrop-filter: blur(20px);
     backdrop-filter: blur(20px);
 }
 
@@ -748,6 +749,7 @@ body {
     transition: all 0.35s var(--ease);
     z-index: 100;
     white-space: nowrap;
+    -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
 }
 
@@ -766,6 +768,7 @@ body {
     justify-content: center;
     z-index: 200;
     padding: 24px;
+    -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
 }
 

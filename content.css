@@ -32,11 +32,15 @@ ytd-video-masthead-ad-v3-renderer,
 ytd-search-pyv-renderer,
 ytd-promoted-video-renderer,
 ytd-ad-inline-playback-meta-block,
-ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer),
-ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
-ytd-rich-section-renderer:has(ytd-statement-banner-renderer),
 #below #player-ads,
 #panels ytd-ads-engagement-panel-content-renderer {
+    display: none !important;
+}
+
+/* Tách riêng :has() — trình duyệt chưa hỗ trợ (iOS < 15.4) sẽ bỏ CẢ rule nếu selector này nằm chung nhóm. */
+ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer),
+ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
+ytd-rich-section-renderer:has(ytd-statement-banner-renderer) {
     display: none !important;
 }
 
@@ -141,7 +145,11 @@ html.fg-hide-upsell ytmusic-statement-banner-renderer,
 html.fg-hide-upsell ytd-primetime-promo-renderer,
 html.fg-hide-upsell ytd-brand-video-singleton-renderer,
 html.fg-hide-upsell ytd-brand-video-shelf-renderer,
-html.fg-hide-upsell ytd-background-promo-renderer,
+html.fg-hide-upsell ytd-background-promo-renderer {
+    display: none !important;
+}
+
+/* Tách riêng :has() (xem ghi chú ở trên) */
 html.fg-hide-upsell tp-yt-paper-dialog:has(yt-mealbar-promo-renderer),
 html.fg-hide-upsell tp-yt-paper-dialog:has(ytd-mealbar-promo-renderer),
 html.fg-hide-upsell ytmusic-popup-container tp-yt-paper-dialog:has(ytmusic-mealbar-promo-renderer) {

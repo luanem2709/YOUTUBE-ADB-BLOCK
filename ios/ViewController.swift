@@ -204,6 +204,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         )
         NotificationCenter.default.addObserver(
             self,
+            selector: #selector(onRouteChange(_:)),
+            name: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+        NotificationCenter.default.addObserver(
+            self,
             selector: #selector(onAudioInterruption(_:)),
             name: AVAudioSession.interruptionNotification,
             object: AVAudioSession.sharedInstance()
@@ -211,6 +217,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     @objc private func onWillResignActive() {
+        DiagLog.shared.record("lifecycle", ["phase": "resign_active"])
         // Khi người dùng bắt đầu vuốt thanh Home lên để thoát ra ngoài màn hình chính:
         // Kích hoạt ngay Авто-PiP (Hình-trong-hình tự động) mượt mà không chặn luồng UI
         if isAutoPiPEnabled() {
@@ -219,6 +226,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     @objc private func onDidEnterBackground() {
+        DiagLog.shared.record("lifecycle", ["phase": "enter_background"])
         DiagLog.shared.flush()
         configureAudioSession()
         if bgTask == .invalid {
@@ -247,6 +255,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     @objc private func onWillEnterForeground() {
+        DiagLog.shared.record("lifecycle", ["phase": "enter_foreground"])
         if bgTask != .invalid {
             UIApplication.shared.endBackgroundTask(bgTask)
             bgTask = .invalid
@@ -254,6 +263,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     }
 
     @objc private func onDidBecomeActive() {
+        DiagLog.shared.record("lifecycle", ["phase": "become_active"])
         // Khi quay lại ứng dụng FUNNYGAME: tự động thu khung PiP về lại trong trang mượt mà
         currentWebView()?.evaluateJavaScript("if (window.__fgAutoExitPiP) window.__fgAutoExitPiP();", completionHandler: nil)
     }
@@ -264,12 +274,34 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
               let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
         let optVal = (info[AVAudioSessionInterruptionOptionKey] as? UInt) ?? 0
         let shouldResume = AVAudioSession.InterruptionOptions(rawValue: optVal).contains(.shouldResume)
-        DiagLog.shared.record("audio_interrupt", ["type": type == .began ? "began" : "ended", "resume": shouldResume])
+        var fields: [String: Any] = ["type": type == .began ? "began" : "ended", "state": appStateName()]
+        if type == .ended {
+            fields["resume"] = shouldResume
+        } else {
+            // Mã lý do của iOS (0 = mặc định; các mã khác do hệ thống định nghĩa) — chỉ ghi số, không đoán nghĩa
+            let reason = (info[AVAudioSessionInterruptionReasonKey] as? UInt) ?? 0
+            fields["reason"] = Int(min(reason, 9))
+        }
+        DiagLog.shared.record("audio_interrupt", fields)
         if type == .ended {
             configureAudioSession()
             if isBackgroundPlayEnabled() {
                 sendRemoteCommand("play")
             }
+        }
+    }
+
+    /// Đổi tuyến âm thanh (cắm/rút tai nghe, AirPods ngắt kết nối, đổi loa...): chỉ ghi mã lý do của iOS.
+    @objc private func onRouteChange(_ notification: Notification) {
+        let raw = (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) ?? 0
+        DiagLog.shared.record("audio_route", ["reason": Int(min(raw, 9)), "state": appStateName()])
+    }
+
+    private func appStateName() -> String {
+        switch UIApplication.shared.applicationState {
+        case .active: return "active"
+        case .inactive: return "inactive"
+        default: return "background"
         }
     }
 
@@ -1457,6 +1489,7 @@ final class DiagLog {
 
     private struct EventDef {
         let fromJS: Bool
+        let limit: Int?
         let fields: [String: Rule]
     }
 
@@ -1467,6 +1500,7 @@ final class DiagLog {
     private var maxBytes = 65536
     private var maxEventBytes = 512
     private var perEventPerMinute = 6
+    private var maxPerEventPerMinute = 30
     private var entries: [String] = []
     private var totalBytes = 0
     private var windows: [String: (start: TimeInterval, count: Int)] = [:]
@@ -1526,7 +1560,7 @@ final class DiagLog {
                 }
                 if !valid { break }
             }
-            if valid { parsed[name] = EventDef(fromJS: src == "js", fields: fields) }
+            if valid { parsed[name] = EventDef(fromJS: src == "js", limit: def["limit"] as? Int, fields: fields) }
         }
         let lim = (root["limits"] as? [String: Any]) ?? [:]
         queue.sync {
@@ -1535,6 +1569,7 @@ final class DiagLog {
             self.maxBytes = (lim["maxBytes"] as? Int) ?? 65536
             self.maxEventBytes = (lim["maxEventBytes"] as? Int) ?? 512
             self.perEventPerMinute = (lim["perEventPerMinute"] as? Int) ?? 6
+            self.maxPerEventPerMinute = (lim["maxPerEventPerMinute"] as? Int) ?? 30
         }
         if let out = try? JSONSerialization.data(withJSONObject: root), let s = String(data: out, encoding: .utf8) {
             schemaJSON = s
@@ -1567,7 +1602,8 @@ final class DiagLog {
         let now = Date().timeIntervalSince1970
         var w = windows[event] ?? (start: now, count: 0)
         if now - w.start > 60 { w = (start: now, count: 0) }
-        if w.count >= perEventPerMinute { windows[event] = w; return }
+        let cap = min(def.limit ?? perEventPerMinute, maxPerEventPerMinute) // mỗi loại có thể có hạn mức riêng trong schema
+        if w.count >= cap { windows[event] = w; return }
         w.count += 1
         windows[event] = w
 

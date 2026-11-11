@@ -121,6 +121,19 @@ const last = (e) => sink.filter((p) => p.e === e).slice(-1)[0];
     for (let i = 0; i < 1000; i++) if (T.validate("compat", { css_has: true, w: "s", dpr: 3 }) === null) validOk = false;
     check("D23 validate chay on dinh 1000 lan lien tiep (khong do thoi gian)", validOk);
 
+    // ----- Trạng thái phát (media_state) + hạn mức riêng theo sự kiện -----
+    const m0 = count("media_state");
+    T.onMedia({ type: "play", target: v });
+    const msg = last("media_state");
+    check("D25 su kien play cua <video> -> media_state {state:play, hidden, ad:false}", count("media_state") === m0 + 1 && msg.f.state === "play" && typeof msg.f.hidden === "boolean" && msg.f.ad === false, msg && JSON.stringify(msg.f));
+    mp.classList.add("ad-showing"); T.onMedia({ type: "pause", target: v }); mp.classList.remove("ad-showing");
+    check("D26 media_state ghi nhan dang la quang cao (ad:true)", last("media_state").f.state === "pause" && last("media_state").f.ad === true);
+    T.onMedia({ type: "play", target: document.createElement("div") });
+    check("D27 su kien tren phan tu khong phai video/audio bi bo qua", count("media_state") === m0 + 2);
+    for (let i = 0; i < 40; i++) T.onMedia({ type: i % 2 ? "pause" : "play", target: v });
+    const msN = count("media_state");
+    check("D28 media_state co han muc rieng cao hon mac dinh (24/phut, > 6) nhung van bi chan", msN > 6 && msN <= 24, "media_state=" + msN);
+
     // Giới hạn tần suất (đặt cuối vì chạm hạn mức compat)
     const c0 = count("compat");
     for (let i = 0; i < 30; i++) T.emit("compat", { dpr: 2 });

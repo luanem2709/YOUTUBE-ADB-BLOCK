@@ -483,5 +483,51 @@ resetModal.addEventListener("click", (e) => {
 
 versionBadge.textContent = "v" + chrome.runtime.getManifest().version;
 
+// ---------- Chẩn đoán (chỉ trong app iOS) ----------
+// Cầu nối native chỉ tồn tại khi chạy trong WKWebView của app; trên extension desktop thẻ này luôn ẩn.
+function nativeBridge() {
+    try {
+        return (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.fgBridge) || null;
+    } catch { return null; }
+}
+
+function diagPost(payload) {
+    const b = nativeBridge();
+    if (b) b.postMessage(payload);
+}
+
+// Swift gọi hàm này để cập nhật trạng thái (số sự kiện, kích thước, đang bật/tắt)
+window.__fgDiagStatus = function (s) {
+    const en = $("diagEnabled");
+    const st = $("diagStatus");
+    if (!s || !en || !st) return;
+    en.checked = !!s.enabled;
+    const kb = Math.max(0, Math.round((Number(s.bytes) || 0) / 102.4) / 10);
+    st.textContent = (s.enabled ? "Đang ghi" : "Đã tắt") + " · " + (Number(s.count) || 0) + " sự kiện · " + kb + " KB. Chỉ lưu trên máy này, không tự gửi đi.";
+};
+
+let diagBound = false;
+function initDiagCard() {
+    const card = $("diagCard");
+    if (!card) return;
+    if (!nativeBridge()) {
+        card.style.display = "none";
+        return;
+    }
+    card.style.display = "";
+    if (!diagBound) {
+        diagBound = true;
+        $("diagEnabled").addEventListener("change", (e) => diagPost({ action: "diagSetEnabled", on: !!e.target.checked }));
+        $("diagExportBtn").addEventListener("click", () => diagPost({ action: "diagExport" }));
+        $("diagClearBtn").addEventListener("click", () => {
+            diagPost({ action: "diagClear" });
+            showToast("Đã xoá nhật ký chẩn đoán");
+        });
+    }
+    diagPost({ action: "diagStatus" });
+}
+window.__fgInitDiagCard = initDiagCard;
+
 initTabs();
 applyLicenseGate();
+initDiagCard();

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<div id="movie_player" class="html5-video-player" style="width:640px;height:360px">
+  <video class="html5-main-video" style="width:640px;height:360px"></video>
+</div>
+<pre id="out">RUNNING</pre>
+<script>
+// Test cho ios/diag.js: kiểm tra lọc theo schema, chống rò dữ liệu nhận dạng, giới hạn tần suất, và các bộ phát hiện sự cố.
+const sink = [];
+window.__FG_TEST__ = {
+    diagAnyHost: true, diagNoTimers: true,
+    diagCfg: { adStuckMs: [150, 400, 900], rateStuckMs: [100, 300], errorDebounceMs: 400 },
+    diagSink: (p) => sink.push(p),
+};
+const xhr = new XMLHttpRequest();
+xhr.open("GET", "/ios/diag-schema.json", false);
+xhr.send();
+window.__FG_DIAG_SCHEMA__ = JSON.parse(xhr.responseText);
+</script>
+<script src="/ios/diag.js"></script>
+<script>
+const R = [];
+const check = (n, c, x) => R.push((c ? "PASS " : "FAIL ") + n + (x ? "  [" + x + "]" : ""));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const T = window.__FG_TEST__.diag;
+const SCHEMA = window.__FG_DIAG_SCHEMA__;
+const mp = document.getElementById("movie_player");
+const v = mp.querySelector("video");
+let ct = 0, dur = 3600, merr = null;
+Object.defineProperty(v, "duration", { get: () => dur });
+Object.defineProperty(v, "currentTime", { get: () => ct, set: (x) => { ct = x; } });
+Object.defineProperty(v, "error", { get: () => merr });
+const count = (e) => sink.filter((p) => p.e === e).length;
+const last = (e) => sink.filter((p) => p.e === e).slice(-1)[0];
+
+(async () => {
+    check("D0 schema nap duoc va co su kien", !!T && Object.keys(SCHEMA.events).length >= 10, Object.keys(SCHEMA.events).length + " su kien");
+
+    // ----- Lọc & chống rò dữ liệu -----
+    check("D1 su kien la bi bo", T.emit("evil_event", {}) === false && sink.length === 0);
+    check("D2 JS khong the gia su kien cua Swift", T.emit("web_terminated", { tab: "yt", reloaded: true }) === false && count("web_terminated") === 0);
+    T.emit("ad_stuck", { bucket: "20s", url: "https://m.youtube.com/watch?v=dQw4w9WgXcQ", vid: "dQw4w9WgXcQ", key: "FG-ABCD-EFGH-JKMN" });
+    const p3 = last("ad_stuck");
+    check("D3 truong ngoai schema bi cat (khong lo URL/ma video/key)", !!p3 && Object.keys(p3.f).join() === "bucket", p3 && JSON.stringify(p3.f));
+    check("D4 gia tri enum sai -> bo ca su kien", T.emit("ad_stuck", { bucket: "999s" }) === false);
+    check("D5 chuoi URL/so/kieu sai khong lot qua truong enum/int/bool",
+        T.emit("compat", { w: "https://m.youtube.com/watch?v=abc" }) === false &&
+        T.emit("compat", { dpr: 99 }) === false &&
+        T.emit("compat", { css_has: "true" }) === false &&
+        T.emit("player_error", { kind: "media_error", code: 1.5 }) === false);
+
+    // ----- Phát hiện sự cố -----
+    const before = sink.length;
+    for (let i = 0; i < 3; i++) { T.sample(); await sleep(30); }
+    check("D6 phat binh thuong -> khong sinh su kien nao", sink.length === before, "them " + (sink.length - before));
+
+    mp.classList.add("ad-showing");
+    T.sample(); await sleep(200); T.sample();
+    check("D7 ad-showing keo dai -> ad_stuck bucket 20s", sink.filter((p) => p.e === "ad_stuck" && p.f.bucket === "20s").length >= 2);
+    await sleep(260); T.sample();
+    check("D8 tiep tuc ket -> bucket 60s (moi bucket 1 lan)", sink.filter((p) => p.e === "ad_stuck" && p.f.bucket === "60s").length === 1);
+    T.sample();
+    check("D9 khong gui lap lai cung bucket", sink.filter((p) => p.e === "ad_stuck" && p.f.bucket === "60s").length === 1);
+    mp.classList.remove("ad-showing");
+    T.sample();
+
+    v.playbackRate = 16;
+    T.sample(); await sleep(150); T.sample();
+    check("D10 toc do 16x khi khong co QC -> rate_stuck 5s", sink.some((p) => p.e === "rate_stuck" && p.f.bucket === "5s"));
+    mp.classList.add("ad-showing"); T.sample(); mp.classList.remove("ad-showing");
+    const rs = count("rate_stuck");
+    check("D11 16x luc dang co QC la binh thuong -> khong rate_stuck them", count("rate_stuck") === rs);
+    v.playbackRate = 1; T.sample();
+
+    merr = { code: 3 };
+    T.sample(); T.sample();
+    check("D12 MediaError -> player_error media_error code 3, chi 1 lan (debounce)", count("player_error") === 1 && last("player_error").f.kind === "media_error" && last("player_error").f.code === 3, "n=" + count("player_error"));
+    await sleep(450); T.sample();
+    check("D13 het debounce -> bao lai", count("player_error") === 2);
+    merr = null;
+    const ov = document.createElement("div"); ov.className = "ytp-error"; mp.appendChild(ov);
+    T.sample();
+    check("D14 lop phu loi cua YouTube -> player_error overlay", sink.some((p) => p.e === "player_error" && p.f.kind === "overlay"));
+    ov.remove();
+
+    // ----- Nghi ngờ nhận diện nhầm QC (tua sát cuối khi video chính bị ẩn/mute) -----
+    ct = 100; T.onTimeupdate({ target: v });
+    ct = 3599; v.style.opacity = "0"; T.onSeeked({ target: v });
+    const sp = last("suspect_seek");
+    check("D15 video chinh bi an roi nhay sat cuoi (khong co class QC) -> suspect_seek", !!sp && sp.f.hidden === true && sp.f.near_end === true && sp.f.long === true, sp && JSON.stringify(sp.f));
+    const n15 = count("suspect_seek");
+    v.style.opacity = "1"; v.muted = false; ct = 100; T.onTimeupdate({ target: v }); ct = 3599; T.onSeeked({ target: v });
+    check("D16 nguoi dung keo thanh tien trinh toi cuoi (khong an/mute) -> khong bao", count("suspect_seek") === n15);
+    v.style.opacity = "0"; ct = 100; T.onTimeupdate({ target: v }); ct = 3599; mp.classList.add("ad-showing"); T.onSeeked({ target: v }); mp.classList.remove("ad-showing");
+    check("D17 dang co QC thi khong bao suspect_seek", count("suspect_seek") === n15);
+    v.style.opacity = "1";
+
+    // ----- Thăm dò tương thích -----
+    T.probe();
+    const pc = last("compat");
+    const fields = SCHEMA.events.compat.fields;
+    const keysOk = !!pc && Object.keys(fields).every((k) => k in pc.f) && Object.keys(pc.f).every((k) => k in fields);
+    check("D18 compat: du moi truong schema, khong them gi khac", keysOk, pc && Object.keys(pc.f).length + "/" + Object.keys(fields).length);
+    check("D19 compat: moi gia tri chi la boolean/enum/so nguyen", !!pc && Object.entries(pc.f).every(([k, val]) => fields[k].t === "bool" ? typeof val === "boolean" : fields[k].t === "enum" ? fields[k].v.includes(val) : Number.isInteger(val)));
+
+    // ----- Tổng quát -----
+    const all = JSON.stringify(sink);
+    check("D20 khong payload nao chua 'http', 'v=' hay 'FG-'", !/http|v=|FG-/i.test(all));
+    check("D21 moi payload qua validate lai van hop le va nho hon 512 byte", sink.every((p) => p.action === "diag" && T.validate(p.e, p.f) !== null && JSON.stringify(p).length <= 512));
+
+    window.__fgDiagSetEnabled(false);
+    const nOff = sink.length;
+    T.emit("ad_stuck", { bucket: "20s" }); T.sample();
+    window.__fgDiagSetEnabled(true);
+    check("D22 tat nhat ky -> khong gui gi", sink.length === nOff);
+
+    // Lưu ý: không đo thời gian ở đây — runner chạy Chrome với thời gian ảo (--virtual-time-budget) nên performance.now() không
+    // tiến trong mã đồng bộ; một con số "0.0ms" sẽ gây hiểu nhầm. Chi phí thật phải đo trên thiết bị.
+    let validOk = true;
+    for (let i = 0; i < 1000; i++) if (T.validate("compat", { css_has: true, w: "s", dpr: 3 }) === null) validOk = false;
+    check("D23 validate chay on dinh 1000 lan lien tiep (khong do thoi gian)", validOk);
+
+    // Giới hạn tần suất (đặt cuối vì chạm hạn mức compat)
+    const c0 = count("compat");
+    for (let i = 0; i < 30; i++) T.emit("compat", { dpr: 2 });
+    check("D24 gioi han tan suat <= 6 su kien/phut cho moi loai", count("compat") - c0 <= 6 && count("compat") <= 6, "compat=" + count("compat"));
+
+    document.getElementById("out").textContent = R.join("\n");
+})();
+</script>
+</body></html>

@@ -78,6 +78,7 @@ const BROWSER_TESTS = [
     { file: "popup.html", url: "/tests/popup.test.html" },
     { file: "stats.html", url: "/tests/stats.test.html" },
     { file: "options.html", url: "/tests/options.test.html" },
+    { file: "diag.html", url: "/tests/diag.html" },
 ];
 
 function findChrome() {
@@ -153,7 +154,7 @@ server.listen(PORT, async () => {
     }
     server.close();
 
-    for (const nodeTest of ["license.test.js", "server.test.js", "rules.test.js", "storage.test.js", "secrets.test.js"]) {
+    for (const nodeTest of ["license.test.js", "server.test.js", "rules.test.js", "storage.test.js", "secrets.test.js", "diag.test.js", "compat.test.js"]) {
         console.log("\n== " + nodeTest);
         try {
             const out = execFileSync(process.execPath, [path.join(__dirname, nodeTest)], { encoding: "utf8" });

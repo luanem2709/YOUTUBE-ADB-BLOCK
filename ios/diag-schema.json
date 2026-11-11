@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "_comment": "Nguồn sự thật DUY NHẤT của nhật ký chẩn đoán iOS. Swift (DiagLog) và JS (diag.js) cùng đọc file này; sự kiện/trường không nằm ở đây sẽ bị bỏ. KHÔNG có trường văn bản tự do: chỉ enum, số nguyên có giới hạn, boolean, hoặc chuỗi khớp mẫu chặt. Vì vậy không thể ghi URL, mã video, key, IP hay mã thiết bị.",
+  "limits": {
+    "maxEntries": 200,
+    "maxBytes": 65536,
+    "maxEventBytes": 512,
+    "perEventPerMinute": 6
+  },
+  "events": {
+    "app_launch": { "src": "swift", "fields": {} },
+    "env": {
+      "src": "swift",
+      "fields": {
+        "os": { "t": "pattern", "re": "^[0-9]{1,2}(\\.[0-9]{1,2}){0,2}$" },
+        "idiom": { "t": "enum", "v": ["phone", "pad", "other"] },
+        "app": { "t": "pattern", "re": "^[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,3}$" }
+      }
+    },
+    "memory_warning": { "src": "swift", "fields": { "tabs": { "t": "int", "min": 0, "max": 4 } } },
+    "web_terminated": {
+      "src": "swift",
+      "fields": {
+        "tab": { "t": "enum", "v": ["yt", "music", "spotify", "panel", "other"] },
+        "reloaded": { "t": "bool" }
+      }
+    },
+    "nav_fail": {
+      "src": "swift",
+      "fields": {
+        "tab": { "t": "enum", "v": ["yt", "music", "spotify", "panel", "other"] },
+        "code": { "t": "int", "min": -99999, "max": 99999 }
+      }
+    },
+    "audio_interrupt": {
+      "src": "swift",
+      "fields": {
+        "type": { "t": "enum", "v": ["began", "ended"] },
+        "resume": { "t": "bool" }
+      }
+    },
+    "compat": {
+      "src": "js",
+      "fields": {
+        "css_has": { "t": "bool" },
+        "css_dvh": { "t": "bool" },
+        "css_webkit_backdrop": { "t": "bool" },
+        "css_gap": { "t": "bool" },
+        "audio_ctx": { "t": "bool" },
+        "media_session": { "t": "bool" },
+        "pip_webkit": { "t": "bool" },
+        "pip_std": { "t": "bool" },
+        "mse": { "t": "bool" },
+        "mms": { "t": "bool" },
+        "vp9": { "t": "bool" },
+        "av1": { "t": "bool" },
+        "avc": { "t": "bool" },
+        "opus": { "t": "bool" },
+        "hls": { "t": "bool" },
+        "coarse": { "t": "bool" },
+        "w": { "t": "enum", "v": ["xs", "s", "m", "l", "xl"] },
+        "dpr": { "t": "int", "min": 1, "max": 4 }
+      }
+    },
+    "player_error": {
+      "src": "js",
+      "fields": {
+        "kind": { "t": "enum", "v": ["media_error", "overlay"] },
+        "code": { "t": "int", "min": 0, "max": 4 }
+      }
+    },
+    "ad_stuck": { "src": "js", "fields": { "bucket": { "t": "enum", "v": ["20s", "60s", "180s"] } } },
+    "rate_stuck": { "src": "js", "fields": { "bucket": { "t": "enum", "v": ["5s", "30s"] } } },
+    "suspect_seek": {
+      "src": "js",
+      "fields": {
+        "near_end": { "t": "bool" },
+        "hidden": { "t": "bool" },
+        "muted": { "t": "bool" },
+        "long": { "t": "bool" }
+      }
+    }
+  }
+}

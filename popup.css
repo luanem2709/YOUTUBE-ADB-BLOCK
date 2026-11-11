@@ -274,6 +274,21 @@ body {
     flex-shrink: 0;
 }
 
+/* Mở rộng vùng chạm ≥44pt theo Apple HIG mà không thay đổi kích thước hiển thị */
+.toggle::before,
+.toggle.sm::before {
+    content: "";
+    position: absolute;
+    /* Mở rộng đều sang 2 phía dọc để đạt 44pt tổng */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 44px;
+    min-height: 44px;
+    width: 100%;
+    height: 100%;
+}
+
 .toggle input {
     opacity: 0;
     width: 0;
@@ -466,6 +481,7 @@ body {
     justify-content: space-between;
     gap: 12px;
     padding: 12px 14px;
+    min-height: 56px; /* Apple HIG: đảm bảo vùng chạm ≥44pt kể cả padding */
     background: var(--surface-strong);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-lg);
@@ -577,6 +593,7 @@ body {
     font-size: 11px;
     font-weight: 700;
     padding: 12px 10px;
+    min-height: 44px; /* Apple HIG: vùng chạm tối thiểu 44pt */
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -664,6 +681,7 @@ body {
     font-size: 9px;
     font-weight: 700;
     padding: 10px 4px 8px;
+    min-height: 44px; /* Apple HIG: vùng chạm tối thiểu 44pt */
     border-radius: var(--radius-lg);
     cursor: pointer;
     display: flex;

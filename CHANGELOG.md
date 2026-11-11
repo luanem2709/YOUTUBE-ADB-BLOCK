@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## [Chưa phát hành] — Giai đoạn 3: UI/UX — Vùng chạm Apple HIG ≥44pt
+
+### Giao diện
+- **Vùng chạm toggle ≥44pt** (popup.css): thêm ::before pseudo-element với min-width/min-height: 44px trên .toggle và .toggle.sm — kích thước hiển thị giữ nguyên (52×30 / 44×26), nhưng vùng ngón tay chạm đủ 44pt theo Apple HIG iOS 18. Trước đây toggle.sm chỉ 26pt dọc (dễ bấm nhầm).<br>- **.btn min-height 44px**: nút trong popup đủ cao theo HIG dù nội dung ngắn.<br>- **.dock-item min-height 44px**: tab dock đủ cao (trước đây ~36pt).<br>- **.setting-tile min-height 56px** (popup.css + popup-mobile.css): đủ 44pt nội dung + padding dọc.<br>
+
+### Test / CI
+- 	ests/compat.test.js +3 test: **C8** toggle ::before hit-area ≥44pt, **C9** .btn/.dock-item min-height, **C10** .setting-tile min-height. Tổng bây giờ 10 test compat.<br>
+
+
 ## [Chưa phát hành] — Giai đoạn 2: Gia cố cầu nối JS-Native (Bridge Hardening)
 
 ### Bảo mật
@@ -387,4 +396,5 @@ NguyÃªn nhÃ¢n gá»‘c tÃ¬m ra tá»« bÃ¡o lá»—i "BÃ¡o lá»—i
 
 ## [1.0.0] â€” 2026-08-23
 - PhiÃªn báº£n khá»Ÿi táº¡o â€” LuanEm2709
+
 

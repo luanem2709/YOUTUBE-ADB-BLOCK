@@ -21,6 +21,8 @@ var SHEET_GID = 1159168714;
 var SPREADSHEET_ID = "1ITw6jYqtuIwDaXvx_GLPl4CUMCNDC7C-pTwJVmNXC8E";
 var TZ = "Asia/Ho_Chi_Minh";
 var NO_EXPIRY_ISO = "9999-12-31"; // key không có ngày hết hạn
+var HWID_MAX = 64; // độ dài tối đa mã máy lưu vào Sheet
+var USER_MAX = 40; // độ dài tối đa tên máy/người dùng lưu vào Sheet
 
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -58,18 +60,25 @@ function doPost(e) {
 
 function handle_(p) {
   var lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  // waitLock có thể ném lỗi khi quá thời gian: trả JSON thay vì trang lỗi HTML
+  try {
+    lock.waitLock(15000);
+  } catch (lockErr) {
+    return json_({ ok: false, message: "Máy chủ đang bận. Thử lại sau ít giây." });
+  }
   try {
     var action = String(p.action || "activate").toLowerCase();
     // BẢO MẬT: không cho tạo key mẫu qua web (ai có link cũng gọi được).
-    // Muốn tạo key mẫu: chạy hàm seedKeys() trong trình soạn thảo Apps Script.
+    // Tạo key chỉ qua menu FUNNYGAME > Thêm key trong Google Sheet (không có key mẫu nào trong mã).
     if (action === "seed") {
       return json_({ ok: false, message: "Không hỗ trợ." });
     }
 
     var key = normalizeKey_(p.key || "");
-    var hwid = String(p.hwid || "").trim();
-    var user = String(p.user || "").trim();
+    // BẢO MẬT: hwid/user đến từ internet. Làm sạch trước khi ghi vào Sheet
+    // (chống công thức =IMPORTXML(...) rò rỉ cột Key, và chống dữ liệu dài/rác).
+    var hwid = sanitizeHwid_(p.hwid);
+    var user = sanitizeUser_(p.user);
 
     if (key.length < 8) {
       return json_({ ok: false, message: "Key authentic quá ngắn." });
@@ -136,17 +145,18 @@ function handle_(p) {
       }
     }
 
-    var bound = String(col.hwid >= 0 ? row[col.hwid] : "").trim();
+    // So khớp bằng giá trị đã chuẩn hoá (idempotent) để mã máy đã lưu từ trước vẫn khớp
+    var bound = sanitizeHwid_(col.hwid >= 0 ? row[col.hwid] : "");
     if (hwid) {
       if (!bound) {
-        if (col.hwid >= 0) sheet.getRange(sheetRow, col.hwid + 1).setValue(hwid);
+        if (col.hwid >= 0) writeText_(sheet.getRange(sheetRow, col.hwid + 1), hwid);
       } else if (bound !== hwid) {
         return json_({ ok: false, message: "Key đã gắn máy khác." });
       }
     }
 
     if (user && col.user >= 0 && !String(row[col.user] || "").trim()) {
-      sheet.getRange(sheetRow, col.user + 1).setValue(user);
+      writeText_(sheet.getRange(sheetRow, col.user + 1), user);
     }
 
     if (col.created >= 0 && !created) {
@@ -189,10 +199,47 @@ function handle_(p) {
       sig: signed.sig
     });
   } catch (err) {
-    return json_({ ok: false, message: "Lỗi máy chủ key: " + err });
+    // Chi tiết lỗi chỉ ghi log phía máy chủ, không trả nguyên văn cho client
+    Logger.log("handle_ error: " + err);
+    var msg = /LICENSE_PRIVATE_KEY/.test(String(err))
+      ? "Máy chủ key chưa cấu hình LICENSE_PRIVATE_KEY trong Script Properties."
+      : "Lỗi máy chủ key. Thử lại sau.";
+    return json_({ ok: false, message: msg });
   } finally {
     lock.releaseLock();
   }
+}
+
+// ======================= LÀM SẠCH DỮ LIỆU TỪ CLIENT =======================
+
+/**
+ * Mã máy: chỉ giữ [A-Za-z0-9._-], tối đa HWID_MAX ký tự, không bắt đầu bằng '-'.
+ * Idempotent: sanitizeHwid_(sanitizeHwid_(x)) === sanitizeHwid_(x).
+ */
+function sanitizeHwid_(value) {
+  var s = String(value === null || value === undefined ? "" : value).trim();
+  s = s.replace(/[^A-Za-z0-9._-]/gu, "_").substring(0, HWID_MAX);
+  return s.replace(/^-/, "_");
+}
+
+/**
+ * Tên máy/người dùng (chỉ để hiển thị): chữ Latin + tiếng Việt, số, dấu cách . _ -
+ * Bỏ ký tự điều khiển/xuống dòng, tối đa USER_MAX ký tự, không bắt đầu bằng '-' hoặc '.'.
+ * Idempotent như sanitizeHwid_.
+ */
+function sanitizeUser_(value) {
+  var s = String(value === null || value === undefined ? "" : value)
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, " ")
+    .replace(/[^A-Za-z0-9\u00C0-\u024F\u0300-\u036F\u1E00-\u1EFF ._-]/gu, "_")
+    .replace(/\s+/g, " ");
+  s = s.trim().substring(0, USER_MAX).trim();
+  return s.replace(/^[-.]/, "_");
+}
+
+/** Ghi dưới dạng VĂN BẢN THUẦN (định dạng "@"), không bao giờ được hiểu là công thức. */
+function writeText_(range, value) {
+  range.setNumberFormat("@");
+  range.setValue(String(value));
 }
 
 // ======================= CHỮ KÝ SỐ =======================
@@ -312,11 +359,20 @@ function generateUniqueKey_(existing) {
   throw new Error("Không tạo được key mới. Thử lại.");
 }
 
+/**
+ * Sinh 4 ký tự ngẫu nhiên từ Utilities.getUuid() (UUID v4, nguồn ngẫu nhiên của Google)
+ * thay cho bộ sinh số giả ngẫu nhiên thường của JS (không dùng cho khoá cấp phép). Loại bỏ độ lệch
+ * bằng cách bỏ byte >= 248 (31 * 8 = 248) trước khi lấy phần dư theo 31 ký tự.
+ */
 function randBlock_() {
   var chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   var out = "";
-  for (var i = 0; i < 4; i++) {
-    out += chars.charAt(Math.floor(Math.random() * chars.length));
+  while (out.length < 4) {
+    var hex = Utilities.getUuid().replace(/-/g, "");
+    for (var i = 0; i + 1 < hex.length && out.length < 4; i += 2) {
+      var b = parseInt(hex.substr(i, 2), 16);
+      if (b < 248) out += chars.charAt(b % chars.length);
+    }
   }
   return out;
 }
@@ -375,48 +431,13 @@ function onEdit(e) {
   }
 }
 
-function seedKeys_() {
-  setupDateColumns_();
-  var sheet = getLicenseSheet_();
-  var data = sheet.getDataRange().getValues();
-  var existing = {};
-  for (var i = 1; i < data.length; i++) {
-    existing[normalizeKey_(data[i][0])] = true;
-  }
-  var today = todayVn_();
-  var keys = [
-    ["[REMOVED]", 3650, "master"],
-    ["[REMOVED]", 365, "test"],
-    ["[REMOVED]", 365, "user 1"],
-    ["[REMOVED]", 365, "user 2"],
-    ["[REMOVED]", 365, "user 3"]
-  ];
-  var added = 0;
-  for (var k = 0; k < keys.length; k++) {
-    if (existing[normalizeKey_(keys[k][0])]) continue;
-    var expires = new Date(today.getTime());
-    expires.setDate(expires.getDate() + keys[k][1]);
-    sheet.appendRow([
-      keys[k][0], "Active", keys[k][1], today, expires, "", "", keys[k][2], "", 0
-    ]);
-    added++;
-  }
-  return json_({ ok: true, message: "Đã ghi " + added + " key vào sheet.", added: added });
-}
-
-/** Chỉ chạy được trong editor (đã chặn qua web): tự ghi 5 key mẫu vào sheet. */
-function seedKeys() {
-  var out = seedKeys_();
-  Logger.log(out.getContent());
-}
-
 function testAuth() {
   var sheet = getLicenseSheet_();
   var data = sheet.getDataRange().getValues();
   Logger.log("Số hàng (gồm tiêu đề): " + data.length);
   Logger.log("Hàng 1: " + JSON.stringify(data[0]));
   if (data.length < 2) {
-    Logger.log("LỖI: Sheet chưa có key. Chạy seedKeys() hoặc menu FUNNYGAME > Thêm key.");
+    Logger.log("LỖI: Sheet chưa có key. Dùng menu FUNNYGAME > Thêm key.");
     return;
   }
   var sample = String(data[1][0] || "");

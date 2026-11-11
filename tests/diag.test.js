@@ -54,7 +54,11 @@ for (const [n, def] of Object.entries(events)) for (const [k, r] of Object.entri
 check("G3 truong so nguyen deu co khoang gioi han nho (khong the nhoi ma dinh danh dai)", Object.values(events).every((d) => Object.values(d.fields || {}).every((r) => r.t !== "int" || (r.max - r.min) <= 200000)), intFields.join(" "));
 
 const lim = (schema && schema.limits) || {};
-check("G4 gioi han nhat ky hop ly (<=200 muc, <=64KB, <=512B/su kien, <=6/phut)", lim.maxEntries <= 200 && lim.maxBytes <= 65536 && lim.maxEventBytes <= 512 && lim.perEventPerMinute <= 6, JSON.stringify(lim));
+check("G4 gioi han nhat ky hop ly (<=200 muc, <=64KB, <=512B/su kien, <=6/phut mac dinh, tran 30/phut)", lim.maxEntries <= 200 && lim.maxBytes <= 65536 && lim.maxEventBytes <= 512 && lim.perEventPerMinute <= 6 && lim.maxPerEventPerMinute <= 30, JSON.stringify(lim));
+const badLimit = Object.entries(events).filter(([, d]) => d.limit !== undefined && !(Number.isInteger(d.limit) && d.limit >= 1 && d.limit <= lim.maxPerEventPerMinute)).map(([n]) => n);
+check("G4b hạn mức riêng của từng sự kiện là số nguyên 1..maxPerEventPerMinute", badLimit.length === 0, badLimit.join(", "));
+const need = ["lifecycle", "audio_route", "media_state", "audio_interrupt"];
+check("G4c co du su kien chan doan am thanh/vong doi (lifecycle, audio_route, media_state, audio_interrupt)", need.every((n) => events[n]), need.filter((n) => !events[n]).join(", "));
 
 // ---- Khớp Swift <-> JS <-> schema ----
 const swift = rd("ios/ViewController.swift");
@@ -80,7 +84,7 @@ check("G8 tin 'diag' tu trang chi nhan neu la khung chinh + web tab + host YouTu
 const panelActions = ["diagStatus", "diagExport", "diagClear", "diagSetEnabled"];
 const missing = panelActions.filter((a) => !/isPanelMessage\(message\)/.test(caseBody(a)));
 check("G9 cac lenh xuat/xoa/bat-tat/trang thai chi nhan tu bang dieu khien (isPanelMessage)", missing.length === 0, missing.join(", "));
-check("G10 DiagLog xac thuc theo schema va co gioi han tan suat", /fromJS/.test(swift) && /perEventPerMinute|perMinute/.test(swift) && /maxEventBytes/.test(swift));
+check("G10 DiagLog xac thuc theo schema va co gioi han tan suat (mac dinh + rieng tung su kien)", /fromJS/.test(swift) && /perEventPerMinute|perMinute/.test(swift) && /maxEventBytes/.test(swift) && /def\.limit/.test(swift) && /maxPerEventPerMinute/.test(swift));
 check("G11 nhat ky khong tu gui di dau (khong URLSession/URLRequest trong DiagLog)", (() => {
     const a = swift.indexOf("final class DiagLog");
     const b = swift.indexOf("\n}\n", a);

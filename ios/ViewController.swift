@@ -481,7 +481,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     // ---------- Khởi tạo WKUserContentController & Tiêm Script Chặn QC ----------
     private func buildBootstrapScript(mainUrl: String) -> String {
-        let localJson = getStoredJson(storageKeyLocal)
+        // Lọc bỏ các trường nhạy cảm của license trước khi inject vào window (page world).
+        // license.js đọc chúng qua chrome.storage.local.get() — native handler trả trực tiếp từ UserDefaults.
+        let localJson = stripLicenseKeysFromJson(getStoredJson(storageKeyLocal))
         let sessionJson = getStoredJson(storageKeySession)
         var logoDataUrl = readResBase64("fg-logo-ios.png", mime: "image/png")
         if logoDataUrl.isEmpty {
@@ -503,6 +505,21 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         window.__FG_DIAG_SCHEMA__ = \(diagSchema);
         window.__FG_DIAG_ENABLED__ = \(diagEnabled);
         """
+    }
+
+    /// Loại bỏ 5 trường license nhạy cảm khỏi JSON storage trước khi inject vào page world.
+    /// license.js vẫn đọc được chúng qua chrome.storage.local.get() (native handler).
+    private func stripLicenseKeysFromJson(_ json: String) -> String {
+        guard var dict = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] else {
+            return json
+        }
+        let sensitiveKeys = ["licenseKey", "licenseToken", "licenseSig", "licenseValid", "licenseExpires"]
+        sensitiveKeys.forEach { dict.removeValue(forKey: $0) }
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              let stripped = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return stripped
     }
 
     private func buildCssInjectionScript(_ cssText: String) -> String {
@@ -932,6 +949,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         return wv === p
     }
 
+    /// Host được phép gọi fgBridge (tất cả action): tab YouTube, YT Music, Spotify và panel (localhost).
+    private func isAllowedBridgeHost(_ host: String?) -> Bool {
+        guard let h = host?.lowercased() else { return false }
+        for base in ["youtube.com", "spotify.com"] where h == base || h.hasSuffix("." + base) { return true }
+        return h == "localhost"
+    }
+
     /// Sự kiện chẩn đoán từ JS chỉ chấp nhận khi trang đang ở YouTube/Spotify.
     private func isAllowedDiagHost(_ host: String?) -> Bool {
         guard let h = host?.lowercased() else { return false }
@@ -1329,6 +1353,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         guard message.name == "fgBridge",
               let body = message.body as? [String: Any],
               let action = body["action"] as? String else { return }
+
+        // Từ chối tin nhắn từ host không thuộc whitelist (youtube.com, spotify.com, localhost).
+        // Các trang bên ngoài không được gọi fgBridge để tránh UXSS / privilege escalation.
+        guard isAllowedBridgeHost(message.frameInfo.request.url?.host) else { return }
 
         switch action {
         case "diag":

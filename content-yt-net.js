@@ -1,13 +1,13 @@
 // FUNNYGAME — Lớp chặn quảng cáo TẦNG MẠNG (YouTube)
 // Chạy trong MAIN world, document_start → chạy TRƯỚC mã của YouTube để can thiệp phản hồi API.
 //
-// LƯU Ý AN TOÀN (YouTube 2026 SABR / serverAbrStreamingUrl):
-//   Trên YouTube thực tế, khi sửa trực tiếp playerResponse (xoá adPlacements / playerAds / adSlots
-//   hoặc thay Response của /youtubei/v1/player), trình phát SABR của YouTube kiểm tra chữ ký luồng
-//   và báo lỗi màn hình đen "Đã xảy ra lỗi. Vui lòng thử lại sau. (282054944)", hoặc làm mất
-//   luồng video của quảng cáo (duration=null, kẹt ở ended-mode).
-//   Vì vậy trên trang YouTube thật, việc bỏ qua quảng cáo ở 0ms được thực hiện hoàn toàn bởi
-//   content-main.js (isTrusted click proxy + 16x/seek + ẩn lớp phủ CSS) mà KHÔNG làm hỏng playerResponse.
+// TRẠNG THÁI: BẬT LẠI (thử nghiệm) với CẦU CHÌ tự ngắt.
+//   Trước đây lớp này bị tắt trên YouTube thật vì SABR (serverAbrStreamingUrl): sửa phản hồi có thể làm
+//   trình phát báo lỗi đen màn hình "(282054944)". Nay bật lại nhưng:
+//     • chỉ gỡ khóa quảng cáo (adPlacements / playerAds / adSlots), không đụng streamingData;
+//     • nếu thấy lỗi phát video (.ytp-error) sau khi đã gỡ → S.trip(): ngắt lớp này 24 giờ
+//       (lưu localStorage) rồi tải lại trang đúng 1 lần; DOM fallback trong content-main.js vẫn chạy bình thường;
+//     • người dùng tắt được bằng công tắc "Bỏ qua hẳn quảng cáo" (blockManifest).
 (function () {
     if (window.__fgNet) return;
 
@@ -21,7 +21,20 @@
     };
     window.__fgNet = S;
 
+    // Cầu chì đã nổ trong 24 giờ qua → không gỡ QC ở tầng mạng (bỏ qua trong môi trường test để các trang test không nhiễm nhau)
+    const TRIP_KEY = "__fg_net_trip";
+    const TRIP_TTL = 24 * 60 * 60 * 1000;
+    const RELOAD_KEY = "__fg_net_reload";
+    function recentlyTripped() {
+        if (window.__FG_TEST__) return false;
+        try {
+            const ts = Number(localStorage.getItem(TRIP_KEY) || 0);
+            return ts > 0 && Date.now() - ts >= 0 && Date.now() - ts < TRIP_TTL;
+        } catch { return false; }
+    }
+
     const isTestEnv = !!window.__FG_TEST__;
+    if (recentlyTripped()) S.forced = true;
 
     let allowLicense = false;
     let enabled = false;
@@ -147,7 +160,6 @@
     }
 
     function shouldStrip() {
-        if (!isTestEnv) return false;
         if (S.forced) return false;
         if (!enabled) return false;
         if (!blockManifest) return false;
@@ -169,7 +181,7 @@
             blockManifest = msg.settings.blockManifest !== false;
         }
         markReady();
-        if (isTestEnv) scanGlobals();
+        scanGlobals();
     });
 
     function isPlayerApi(url) {
@@ -191,7 +203,7 @@
         } catch { /* ignore */ }
     }
 
-    if (isTestEnv) {
+    {
         try {
             let _ytInitialPR = window.ytInitialPlayerResponse;
             Object.defineProperty(window, "ytInitialPlayerResponse", {
@@ -223,9 +235,92 @@
 
     S.trip = function () {
         if (S.forced) return;
+        const hadStripped = S.stripped > 0 || (S.lastStripAt && Date.now() - S.lastStripAt < 60000);
         S.forced = true;
         S.stripped = 0;
+        if (isTestEnv) return;
+        try { localStorage.setItem(TRIP_KEY, String(Date.now())); } catch { /* ignore */ }
+        // Tải lại đúng 1 lần (chống vòng lặp) để lấy lại phản hồi player nguyên vẹn
+        if (!hadStripped) return;
+        try {
+            const last = Number(sessionStorage.getItem(RELOAD_KEY) || 0);
+            if (Date.now() - last < 60000) return;
+            sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+            location.reload();
+        } catch { /* ignore */ }
     };
+
+    // ---------- Móc fetch / XHR của /youtubei/v1/player ----------
+    function rebuildResponse(res, text) {
+        const headers = new Headers(res.headers);
+        headers.delete("content-length");
+        headers.delete("content-encoding");
+        return new Response(text, { status: res.status, statusText: res.statusText, headers });
+    }
+
+    try {
+        const origFetch = window.fetch;
+        if (typeof origFetch === "function" && !origFetch.__fgNet) {
+            const wrapped = function (input) {
+                const p = origFetch.apply(this, arguments);
+                let url = "";
+                try { url = typeof input === "string" ? input : (input && input.url) || String(input || ""); } catch { /* ignore */ }
+                if (!isPlayerApi(url)) return p;
+                return p.then(async (res) => {
+                    try {
+                        if (!res || !res.ok) return res;
+                        if (!S.ready) await readyPromise;
+                        if (!shouldStrip()) return res;
+                        const text = await res.clone().text();
+                        const out = sanitizeText(text);
+                        return out === text ? res : rebuildResponse(res, out);
+                    } catch {
+                        return res;
+                    }
+                });
+            };
+            wrapped.__fgNet = true;
+            window.fetch = wrapped;
+        }
+    } catch { /* ignore */ }
+
+    try {
+        const XHR = window.XMLHttpRequest && window.XMLHttpRequest.prototype;
+        const textDesc = XHR && Object.getOwnPropertyDescriptor(XHR, "responseText");
+        const respDesc = XHR && Object.getOwnPropertyDescriptor(XHR, "response");
+        if (XHR && textDesc && textDesc.get && respDesc && respDesc.get && !XHR.open.__fgNet) {
+            const origOpen = XHR.open;
+            const openWrapped = function (method, url) {
+                try {
+                    if (isPlayerApi(String(url))) {
+                        const xhr = this;
+                        Object.defineProperty(xhr, "responseText", {
+                            configurable: true,
+                            get() {
+                                const raw = textDesc.get.call(xhr);
+                                return xhr.readyState === 4 && shouldStrip() ? sanitizeText(raw) : raw;
+                            },
+                        });
+                        Object.defineProperty(xhr, "response", {
+                            configurable: true,
+                            get() {
+                                const raw = respDesc.get.call(xhr);
+                                if (xhr.readyState !== 4 || !shouldStrip()) return raw;
+                                if (typeof raw === "string") return sanitizeText(raw);
+                                if (raw && typeof raw === "object" && xhr.responseType === "json") {
+                                    if (sanitizeObject(raw, 0)) { S.stripped++; S.lastStripAt = Date.now(); }
+                                }
+                                return raw;
+                            },
+                        });
+                    }
+                } catch { /* ignore */ }
+                return origOpen.apply(this, arguments);
+            };
+            openWrapped.__fgNet = true;
+            XHR.open = openWrapped;
+        }
+    } catch { /* ignore */ }
 
     if (window.__FG_TEST__) {
         window.__FG_TEST__.net = {

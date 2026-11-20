@@ -20,6 +20,10 @@
     };
 
     window.__FG_TEST__ = {};
+    // fetch giả: luôn trả phản hồi player CÓ quảng cáo (lớp mạng phải móc được trước khi YouTube gọi)
+    window.fetch = function () {
+        return Promise.resolve(new Response(JSON.stringify(PLAYER_RESPONSE), { status: 200, headers: { "content-type": "application/json" } }));
+    };
 </script>
 <script src="/content-yt-net.js"></script>
 <script>
@@ -177,6 +181,21 @@
                 window.ytInitialPlayerResponse.playerAds.length === 0 &&
                 window.ytInitialPlayerResponse.adSlots.length === 0,
                 `len=${window.ytInitialPlayerResponse.adPlacements.length} delay=${dt}ms`);
+
+            // 13. Móc fetch /youtubei/v1/player (BẬT LẠI) + cầu chì
+            window.__fgNet.forced = false;
+            const r1 = await (await window.fetch("https://www.youtube.com/youtubei/v1/player?key=x")).json();
+            check("N27 fetch /player -> gỡ adPlacements/playerAds/adSlots",
+                r1.adPlacements.length === 0 && r1.playerAds.length === 0 && r1.adSlots.length === 0,
+                `len=${r1.adPlacements.length}`);
+            check("N28 fetch /player KHÔNG làm mất streamingData/playabilityStatus",
+                r1.streamingData.formats.length === 1 && r1.playabilityStatus.status === "OK");
+            const r2 = await (await window.fetch("https://www.youtube.com/youtubei/v1/browse")).json();
+            check("N29 fetch URL khác (browse) KHÔNG bị đụng", r2.adPlacements.length === 2);
+            window.__fgNet.trip();
+            const r3 = await (await window.fetch("https://www.youtube.com/youtubei/v1/player")).json();
+            check("N30 cầu chì nổ -> fetch /player trả nguyên vẹn (không gỡ)", r3.adPlacements.length === 2 && window.__fgNet.forced === true);
+            window.__fgNet.forced = false;
 
             document.getElementById("out").textContent = results.join("\n");
         } catch (e) {

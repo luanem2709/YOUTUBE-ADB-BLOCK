@@ -16,6 +16,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     private var webViews: [Int: WKWebView] = [:]
     private var activeTabIndex: Int = 0
+    /// Nút "YouTube" trên thanh dưới gộp cả YouTube (0) lẫn YT Music (1): nhớ tab nào đang dùng gần nhất.
+    private var youTubeFamilyTab: Int = 0
     private var progressObservations: [Int: NSKeyValueObservation] = [:]
 
     private var panelContainer: UIView?
@@ -60,6 +62,25 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     override var prefersHomeIndicatorAutoHidden: Bool {
         return view.bounds.width > view.bounds.height
+    }
+
+    /// Đối số khởi động chỉ để kiểm thử/chụp ảnh trên Simulator (người dùng thường không bao giờ truyền):
+    /// -fgOpenPanel mở bảng điều khiển, -fgPanelLarge mở toàn màn hình, -fgTabMusic mở YT Music.
+    private var didApplyLaunchArguments = false
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !didApplyLaunchArguments else { return }
+        didApplyLaunchArguments = true
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-fgTabMusic") { switchToTab(1) }
+        if args.contains("-fgOpenPanel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                guard let self = self else { return }
+                self.openPanel(page: "popup.html")
+                if args.contains("-fgPanelLarge") { self.setPanelDetent(.large, animated: false) }
+            }
+        }
     }
 
     override func viewDidLoad() {
@@ -641,7 +662,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
         let items: [(String, String, Selector)] = [
             ("play.rectangle.fill", "YouTube", #selector(onTapYouTube)),
-            ("waveform.circle.fill", "YT Music", #selector(onTapMusic)),
             ("headphones", "Spotify", #selector(onTapSpotify)),
             ("pip.enter", "PiP", #selector(onTapPiP)),
             ("gearshape.fill", "Cài đặt", #selector(onTapPanel)),
@@ -687,10 +707,16 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             ])
 
             btn.addTarget(self, action: item.2, for: .touchUpInside)
+            if idx == 0 {
+                // Nhấn giữ nút YouTube để chọn YouTube / YouTube Music (đã gộp thành 1 nút)
+                let lp = UILongPressGestureRecognizer(target: self, action: #selector(onLongPressYouTube(_:)))
+                lp.minimumPressDuration = 0.45
+                btn.addGestureRecognizer(lp)
+            }
             stack.addArrangedSubview(btn)
             tabButtons.append(btn)
 
-            if idx == 4 {
+            if idx == 3 { // nút Cài đặt (sau khi gộp YouTube + YT Music còn 4 nút)
                 let badge = UILabel()
                 badge.translatesAutoresizingMaskIntoConstraints = false
                 badge.font = UIFont.systemFont(ofSize: 9.5, weight: .bold)
@@ -811,6 +837,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         }
 
         activeTabIndex = index
+        if index == 0 || index == 1 {
+            youTubeFamilyTab = index
+            updateYouTubeDockLabel()
+        }
         highlightTab(index)
 
         let targetWv = getOrCreateWebView(for: index)
@@ -828,7 +858,29 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         }
     }
 
-    private func highlightTab(_ activeIdx: Int) {
+    /// Nút đầu tiên của thanh dưới đổi nhãn/biểu tượng theo tab đang dùng: YouTube hoặc YT Music.
+    private func updateYouTubeDockLabel() {
+        guard let btn = tabButtons.first else { return }
+        let isMusic = (youTubeFamilyTab == 1)
+        if let lbl = btn.viewWithTag(102) as? UILabel { lbl.text = isMusic ? "YT Music" : "YouTube" }
+        if let icon = btn.viewWithTag(101) as? UIImageView {
+            let cfg = UIImage.SymbolConfiguration(pointSize: 16.5, weight: .semibold)
+            icon.image = UIImage(systemName: isMusic ? "waveform.circle.fill" : "play.rectangle.fill", withConfiguration: cfg)
+        }
+    }
+
+    /// Vị trí nút trên thanh dưới cho từng tab: YouTube (0) và YT Music (1) dùng chung nút đầu tiên.
+    private func dockIndex(forTab tab: Int) -> Int {
+        switch tab {
+        case 0, 1: return 0
+        case 2: return 1
+        case 4: return 3
+        default: return 0
+        }
+    }
+
+    private func highlightTab(_ activeTab: Int) {
+        let activeIdx = dockIndex(forTab: activeTab)
         let activeColor = UIColor(red: 1.0, green: 0.27, blue: 0.35, alpha: 1.0)
         let inactiveColor = UIColor(white: 0.72, alpha: 1.0)
         for (idx, btn) in tabButtons.enumerated() {
@@ -854,8 +906,22 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         }
     }
 
-    @objc private func onTapYouTube() { switchToTab(0) }
+    @objc private func onTapYouTube() { switchToTab(youTubeFamilyTab) }
     @objc private func onTapMusic() { switchToTab(1) }
+
+    @objc private func onLongPressYouTube(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        triggerHaptic(style: .medium)
+        let sheet = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+        sheet.addAction(UIAlertAction(title: "YouTube", style: .default) { [weak self] _ in self?.switchToTab(0) })
+        sheet.addAction(UIAlertAction(title: "YouTube Music", style: .default) { [weak self] _ in self?.switchToTab(1) })
+        sheet.addAction(UIAlertAction(title: "Huỷ", style: .cancel, handler: nil))
+        if let pop = sheet.popoverPresentationController, let btn = tabButtons.first {
+            pop.sourceView = btn
+            pop.sourceRect = btn.bounds
+        }
+        present(sheet, animated: true, completion: nil)
+    }
     @objc private func onTapSpotify() { switchToTab(2) }
 
     @objc private func onTapPiP() {

@@ -1,0 +1,60 @@
+name: iOS Simulator screenshots
+
+# Chạy tay (Actions → iOS Simulator screenshots → Run workflow). Build app cho iPhone Simulator, mở app và chụp:
+#   1) màn hình chính  2) bảng điều khiển nửa màn hình  3) bảng toàn màn hình  4) tab YT Music
+# Ảnh nằm trong Artifacts "ios-simulator-screenshots". Viết khi chưa chạy thử trên runner thật → nếu lỗi, xem log từng bước.
+on:
+  workflow_dispatch:
+
+jobs:
+  screenshots:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build app cho Simulator
+        run: |
+          chmod +x ios/build-ipa.sh
+          FG_SIMULATOR=1 ./ios/build-ipa.sh
+          ls -la dist/FUNNYGAME-simulator.app | head
+
+      - name: Bật iPhone Simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import sys,json; d=json.load(sys.stdin)['devices']; c=[x for k,v in d.items() if 'iOS' in k for x in v if x['isAvailable'] and 'iPhone' in x['name']]; pro=[x for x in c if 'Pro' in x['name']] or c; print(pro[-1]['udid'])")
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" dist/FUNNYGAME-simulator.app
+
+      - name: Chụp ảnh các màn hình
+        run: |
+          UDID="${{ steps.sim.outputs.udid }}"
+          BID="com.luanem2709.FUNNYGAME"
+          mkdir -p shots
+          shot() {
+            NAME="$1"; shift
+            xcrun simctl terminate "$UDID" "$BID" >/dev/null 2>&1 || true
+            xcrun simctl launch "$UDID" "$BID" "$@"
+            sleep 14
+            xcrun simctl io "$UDID" screenshot "shots/$NAME.png"
+          }
+          shot 1-man-hinh-chinh
+          shot 2-bang-nua-man-hinh -fgOpenPanel
+          shot 3-bang-toan-man-hinh -fgOpenPanel -fgPanelLarge
+          shot 4-yt-music -fgTabMusic
+          ls -la shots
+
+      - name: Lưu ảnh
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-screenshots
+          path: shots/*.png
+          if-no-files-found: warn
+          retention-days: 14

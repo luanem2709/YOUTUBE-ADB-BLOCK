@@ -20,6 +20,10 @@
     };
 
     window.__FG_TEST__ = {};
+    // fetch giả: luôn trả phản hồi player CÓ quảng cáo (lớp mạng phải móc được trước khi YouTube gọi)
+    window.fetch = function () {
+        return Promise.resolve(new Response(JSON.stringify(PLAYER_RESPONSE), { status: 200, headers: { "content-type": "application/json" } }));
+    };
 </script>
 <script src="/content-yt-net.js"></script>
 <script>
@@ -177,6 +181,39 @@
                 window.ytInitialPlayerResponse.playerAds.length === 0 &&
                 window.ytInitialPlayerResponse.adSlots.length === 0,
                 `len=${window.ytInitialPlayerResponse.adPlacements.length} delay=${dt}ms`);
+
+            // 12b. Phản hồi dạng MẢNG (get_watch): [{ playerResponse: { adPlacements, ... } }, {...}]
+            const arrRes = JSON.parse(JSON.stringify([{ playerResponse: PLAYER_RESPONSE }, { other: 1 }]));
+            const arrTxt = N.sanitizeText(JSON.stringify(arrRes));
+            const arrParsed = JSON.parse(arrTxt);
+            check("N31 sanitizeText xu ly phan hoi dang MANG (get_watch)",
+                arrParsed[0].playerResponse.adPlacements.length === 0 && arrParsed[0].playerResponse.streamingData.formats.length === 1 && arrParsed[1].other === 1);
+            check("N32 isPlayerApi KHONG mong get_watch (da do: treo ~4.8s)", N.isPlayerApi("https://www.youtube.com/youtubei/v1/get_watch") === false);
+
+            // 12c. Cầu chì bắt video đứng âm thầm (đồng hồ giả): chỉ nổ sau 15s liên tục, chỉ khi vừa gỡ QC
+            const stallVid = document.createElement("video"); document.body.appendChild(stallVid);
+            window.__fgNet.forced = false; window.__fgNet.stripped = 1; window.__fgNet.lastStripAt = Date.now();
+            const T0 = Date.now();
+            check("N33 video chua phat <15s -> chua ngat", N.checkStall(T0) === false && N.checkStall(T0 + 14000) === false && window.__fgNet.forced === false);
+            check("N34 video dung >=15s sau khi go QC -> cau chi no", N.checkStall(T0 + 16000) === true && window.__fgNet.forced === true);
+            window.__fgNet.forced = false; window.__fgNet.lastStripAt = Date.now() - 120000;
+            check("N35 lan go QC da cu (>60s) -> khong ngat", N.checkStall(T0 + 40000) === false && window.__fgNet.forced === false);
+            window.__fgNet.stripped = 0; stallVid.remove();
+
+            // 13. Móc fetch /youtubei/v1/player (BẬT LẠI) + cầu chì
+            window.__fgNet.forced = false;
+            const r1 = await (await window.fetch("https://www.youtube.com/youtubei/v1/player?key=x")).json();
+            check("N27 fetch /player -> gỡ adPlacements/playerAds/adSlots",
+                r1.adPlacements.length === 0 && r1.playerAds.length === 0 && r1.adSlots.length === 0,
+                `len=${r1.adPlacements.length}`);
+            check("N28 fetch /player KHÔNG làm mất streamingData/playabilityStatus",
+                r1.streamingData.formats.length === 1 && r1.playabilityStatus.status === "OK");
+            const r2 = await (await window.fetch("https://www.youtube.com/youtubei/v1/browse")).json();
+            check("N29 fetch URL khác (browse) KHÔNG bị đụng", r2.adPlacements.length === 2);
+            window.__fgNet.trip();
+            const r3 = await (await window.fetch("https://www.youtube.com/youtubei/v1/player")).json();
+            check("N30 cầu chì nổ -> fetch /player trả nguyên vẹn (không gỡ)", r3.adPlacements.length === 2 && window.__fgNet.forced === true);
+            window.__fgNet.forced = false;
 
             document.getElementById("out").textContent = results.join("\n");
         } catch (e) {

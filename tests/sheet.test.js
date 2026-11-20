@@ -19,5 +19,17 @@ check("H8 luon mo o muc nua man hinh", /if isNewSheet \|\| wasHidden \{ setPanel
 check("H9 tinh lai chieu cao khi xoay man hinh", /completion: \{ _ in\s*self\.panelHeightConstraint\?\.constant = self\.panelHeight\(for: self\.panelDetent\)/.test(swift));
 check("H10 ngang man hinh dung toan bo (thanh duoi bi an)", /view\.bounds\.width > view\.bounds\.height \{ return 10000 \}/.test(swift));
 
+check("H11 thanh duoi chi con 4 nut: khong con YT Music rieng", !/"YT Music", #selector/.test(swift) && /"YouTube", #selector\(onTapYouTube\)/.test(swift));
+check("H12 nut YouTube nho tab gan nhat (0/1) + nhan giu de chon", /youTubeFamilyTab = index/.test(swift) && /switchToTab\(youTubeFamilyTab\)/.test(swift) && /onLongPressYouTube/.test(swift));
+check("H13 anh xa tab -> nut dock: 0,1->0; 2->1; 4->3", /case 0, 1: return 0[\s\S]{0,40}case 2: return 1[\s\S]{0,40}case 4: return 3/.test(swift) && /if idx == 3 \{/.test(swift));
+
+check("H14 nut dau doi nhan/bieu tuong YouTube <-> YT Music theo tab", /updateYouTubeDockLabel\(\)/.test(swift) && /isMusic \? "YT Music" : "YouTube"/.test(swift) && /waveform\.circle\.fill" : "play\.rectangle\.fill"/.test(swift));
+check("H15 khoi Thong ke gon tren iPhone (an muc tieu ngay)", /\.fg-ios \.progress-wrap\s*\{\s*display:\s*none/.test(require("fs").readFileSync(path.join(__dirname, "..", "mobile", "popup-mobile.css"), "utf8")));
+
+const buildSh = require("fs").readFileSync(path.join(__dirname, "..", "ios", "build-ipa.sh"), "utf8");
+check("H16 doi so khoi dong -fgOpenPanel/-fgPanelLarge/-fgTabMusic (chi de chup anh)", /-fgOpenPanel/.test(swift) && /-fgPanelLarge/.test(swift) && /-fgTabMusic/.test(swift) && /didApplyLaunchArguments/.test(swift));
+check("H17 build-ipa.sh: che do Simulator qua FG_SIMULATOR, mac dinh van la iphoneos", buildSh.includes('FG_SDK="iphoneos"') && buildSh.includes('FG_SIMULATOR:-0') && buildSh.includes('-sdk "$FG_SDK"'));
+check("H18 build-ipa.sh: duong build thiet bi khong doi (van ky ad-hoc + dong goi .ipa)", buildSh.includes("codesign --force --sign -") && buildSh.includes("zip -qr"));
+
 console.log(results.join("\n"));
 process.exit(results.some((r) => r.startsWith("FAIL")) ? 1 : 0);

@@ -1,5 +1,35 @@
 ﻿# Changelog
 
+## [Chưa phát hành] — Cầu chì bắt đứng hình, seek sớm hơn, chụp ảnh Simulator
+
+### Thêm / sửa
+- **Cầu chì bắt video đứng âm thầm** (`content-yt-net.js` `checkStall`): sau khi vừa gỡ QC (trong 60s), nếu video không bắt đầu phát (`currentTime<0.5`, `readyState<3`, không phải QC, tab đang hiện) liên tục **15 giây** thì tự ngắt lớp mạng 24 giờ + tải lại 1 lần. Ngưỡng 15s vì khởi động chậm bình thường tới ~7s (đo thật). Test N33–N35 (đồng hồ giả).
+- **Seek sớm hơn:** `SEEK_AFTER_MS` 200 → 80ms. Đo thật: QC 15,1s chỉ còn hiện 0,27s (trước: 0,56–0,63s với 200ms; 1,8–2,0s trước khi bỏ GRACE).
+- **Chụp ảnh iPhone Simulator** (`.github/workflows/ios-simulator.yml`, chạy tay): build app cho Simulator (`FG_SIMULATOR=1 ios/build-ipa.sh`, đường build thiết bị giữ nguyên), mở app với đối số khởi động `-fgOpenPanel` / `-fgPanelLarge` / `-fgTabMusic` (chỉ để kiểm thử) và chụp 4 màn hình vào Artifacts. **Chưa chạy thử trên runner macOS thật.**
+
+## [Chưa phát hành] — Nâng cấp: canary quảng cáo, giao diện iPhone, CI
+
+### Thêm / sửa
+- **Canary quảng cáo hằng ngày** (`.github/workflows/ad-canary.yml` + `tests/canary.js`): mở YouTube thật (không đăng nhập), nạp script chặn, đổi clip liên tiếp; đỏ nếu mất player, lỗi phát video hoặc quảng cáo hiện quá `MAX_AD_SEC` (3s). Không nằm trong `npm test`.
+- **iPhone:** nút YouTube gộp đổi nhãn/biểu tượng theo tab đang dùng (YouTube ↔ YT Music); khối Thống kê trong bảng nửa màn hình gọn hơn (ẩn thanh mục tiêu, ô số liệu nhỏ).
+- **CI test:** `test.yml` chạy `npm test` thử lại tối đa 3 lần, lưu log từng lần (artifact `test-logs` khi lỗi) và cảnh báo nếu phải thử lại.
+- **README:** mô tả đúng lớp chặn mạng (chỉ `/player` + cầu chì), cách cài iPhone qua GitHub Releases, nút YouTube gộp.
+
+### Đã thử và KHÔNG áp dụng
+- Gỡ quảng cáo ở `/youtubei/v1/get_watch` (đường YouTube dùng khi đổi clip, trả về **mảng** `[{playerResponse:{adPlacements…}}]`): có gỡ được (số lần gỡ tăng) nhưng YouTube vẫn tạo slot QC rỗng và treo ~4.8s ở buffering đen → không tốt hơn tua QC (~0,5s). Lớp mạng vẫn chỉ móc `/player`. `sanitizeObject` nay xử lý được cả mảng (không ảnh hưởng hành vi).
+
+## [Chưa phát hành] — Rút ngắn thời gian quảng cáo còn hiện
+
+### Sửa
+- **`content-main.js` — bỏ chờ GRACE 1,5 giây ở quảng cáo dài.** Đo thật trên YouTube (PC, QC 76 giây): khung "Bỏ qua" (`.ytp-ad-skip-button-slot`) có mặt từ 0ms nên bị coi là "đã có nút" → quảng cáo cứ chạy 1x đúng ~1,5 giây rồi mới tua. Nay: bấm nút nếu có, và nếu quảng cáo còn sau `SEEK_AFTER_MS` (200ms) thì tua 16x + seek tới cuối ngay. Quảng cáo chỉ còn hiện khoảng 0,5 giây (trước đó 1,8–2,0 giây với QC 15–76 giây).
+- `tests/main.html` 34b cập nhật theo chính sách mới. Tổng: 426 PASS, 0 FAIL. Mẫu đo thật còn nhỏ (vài lần gặp quảng cáo), chưa thử trên iPhone.
+
+## [Chưa phát hành] — CI: đăng IPA lên GitHub Releases
+
+### Thay đổi
+- **Workflow `build-ios-ipa.yml` không còn commit `release/funnygame-ios.ipa` vào `main` bằng bot.** IPA được đăng lên GitHub Releases (tag cố định `ios-latest`, kèm bản đặt tên theo phiên bản). Link tải cố định: `releases/download/ios-latest/funnygame-ios.ipa`. Repo không còn phình dần vì file nhị phân và không còn commit `github-actions[bot]`.
+- `release/funnygame-ios.ipa` bị gỡ khỏi git và thêm vào `.gitignore`; tài liệu `mobile/IOS-INSTALL.md` trỏ tới Releases.
+
 ## [Chưa phát hành] — Giai đoạn 4: Giao diện iPhone kiểu iOS gốc
 
 ### Giao diện

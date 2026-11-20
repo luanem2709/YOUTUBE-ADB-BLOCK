@@ -1,0 +1,38 @@
+name: Ad canary
+
+# Mỗi ngày mở YouTube thật (Chrome headless, không đăng nhập), nạp script chặn quảng cáo rồi đổi clip liên tiếp.
+# Đỏ khi: không thấy player, có lỗi phát video, hoặc có quảng cáo hiện lâu hơn MAX_AD_SEC giây
+# → biết ngay khi YouTube đổi giao diện làm chặn quảng cáo hỏng, thay vì chờ người dùng báo.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cài Playwright (chỉ dùng cho canary, không đưa vào package.json)
+        run: npm i --no-save playwright
+
+      - name: Chạy canary (6 clip x 12 giây)
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+          MAX_AD_SEC: "3"
+        run: node tests/canary.js 6 12
+
+      - name: Lưu kết quả canary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-result
+          path: canary-result.json
+          if-no-files-found: ignore
+          retention-days: 30

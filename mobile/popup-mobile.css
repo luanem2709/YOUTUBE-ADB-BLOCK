@@ -358,3 +358,26 @@ body {
     line-height: 1.25;
     padding: 8px 6px;
 }
+
+/* Bảng nửa màn hình: thu gọn khối Thống kê để các nhóm cài đặt hiện ngay không cần cuộn nhiều */
+.fg-ios .stat-card {
+    padding: 8px 6px !important;
+    border-radius: 12px !important;
+}
+
+.fg-ios .stat-val {
+    font-size: 20px !important;
+}
+
+.fg-ios .stat-lbl {
+    font-size: 10px !important;
+    letter-spacing: 0.02em;
+}
+
+.fg-ios .progress-wrap {
+    display: none !important;
+}
+
+.fg-ios .card .card-title:not(.fg-group .card-title) {
+    margin-bottom: 8px;
+}

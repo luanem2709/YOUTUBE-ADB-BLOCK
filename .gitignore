@@ -28,3 +28,8 @@ keys.csv
 tests/popup.test.html
 tests/stats.test.html
 tests/options.test.html
+# IPA do GitHub Actions build, đăng lên GitHub Releases (tag ios-latest) — không commit vào repo
+release/funnygame-ios.ipa
+
+# kết quả canary quảng cáo chạy cục bộ
+canary-result.json

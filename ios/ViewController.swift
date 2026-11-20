@@ -64,6 +64,25 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         return view.bounds.width > view.bounds.height
     }
 
+    /// Đối số khởi động chỉ để kiểm thử/chụp ảnh trên Simulator (người dùng thường không bao giờ truyền):
+    /// -fgOpenPanel mở bảng điều khiển, -fgPanelLarge mở toàn màn hình, -fgTabMusic mở YT Music.
+    private var didApplyLaunchArguments = false
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !didApplyLaunchArguments else { return }
+        didApplyLaunchArguments = true
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-fgTabMusic") { switchToTab(1) }
+        if args.contains("-fgOpenPanel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                guard let self = self else { return }
+                self.openPanel(page: "popup.html")
+                if args.contains("-fgPanelLarge") { self.setPanelDetent(.large, animated: false) }
+            }
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = UIColor(red: 0.05, green: 0.05, blue: 0.07, alpha: 1.0)

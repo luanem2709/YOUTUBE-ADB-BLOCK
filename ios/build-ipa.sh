@@ -87,12 +87,21 @@ for plist in $PLIST_FILES; do
         /usr/libexec/PlistBuddy -c "Add :UIViewControllerBasedStatusBarAppearance bool true" "$plist" 2>/dev/null || true
 done
 
+# Chế độ Simulator (chỉ dùng cho workflow chụp ảnh .github/workflows/ios-simulator.yml): FG_SIMULATOR=1
+# Mặc định (không đặt biến) quy trình build IPA thiết bị bên dưới giữ nguyên.
+FG_SDK="iphoneos"
+FG_PRODUCTS_DIR="Release-iphoneos"
+if [ "${FG_SIMULATOR:-0}" = "1" ]; then
+    FG_SDK="iphonesimulator"
+    FG_PRODUCTS_DIR="Release-iphonesimulator"
+fi
+
 # 6. Biên dịch bản Release cho iOS (arm64) không cần chứng chỉ trả phí
 xcodebuild \
     -project "$XCODEPROJ" \
     -scheme "FUNNYGAME" \
     -configuration Release \
-    -sdk iphoneos \
+    -sdk "$FG_SDK" \
     -derivedDataPath "$DERIVED_DIR" \
     ARCHS="arm64" \
     ONLY_ACTIVE_ARCH=NO \
@@ -102,7 +111,7 @@ xcodebuild \
     AD_HOC_CODE_SIGNING_ALLOWED=YES \
     build
 
-APP_PATH="$(find "$DERIVED_DIR/Build/Products/Release-iphoneos" -maxdepth 1 -name "*.app" | head -n 1)"
+APP_PATH="$(find "$DERIVED_DIR/Build/Products/$FG_PRODUCTS_DIR" -maxdepth 1 -name "*.app" | head -n 1)"
 if [ -z "$APP_PATH" ]; then
     echo "Không tìm thấy FUNNYGAME.app sau khi build"
     exit 1
@@ -120,6 +129,15 @@ cp "$ROOT_DIR/ios/diag-schema.json" "$APP_PATH/fg-ext/diag-schema.json"
 # Cập nhật icon ứng dụng từ icon128.png
 if [ -f "$ROOT_DIR/images/icon128.png" ]; then
     cp "$ROOT_DIR/images/icon128.png" "$APP_PATH/Icon.png" 2>/dev/null || true
+fi
+
+# Chế độ Simulator: dừng ở đây (không ký, không đóng gói .ipa); workflow lấy .app từ dist/
+if [ "${FG_SIMULATOR:-0}" = "1" ]; then
+    mkdir -p "$ROOT_DIR/dist"
+    rm -rf "$ROOT_DIR/dist/FUNNYGAME-simulator.app"
+    cp -R "$APP_PATH" "$ROOT_DIR/dist/FUNNYGAME-simulator.app"
+    echo "==> Simulator: $ROOT_DIR/dist/FUNNYGAME-simulator.app"
+    exit 0
 fi
 
 # 8. Ký Ad-hoc (-) để tương thích ngay với Sideloadly / AltStore / SideStore / TrollStore / ESign

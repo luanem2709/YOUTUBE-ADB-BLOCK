@@ -26,5 +26,10 @@ check("H13 anh xa tab -> nut dock: 0,1->0; 2->1; 4->3", /case 0, 1: return 0[\s\
 check("H14 nut dau doi nhan/bieu tuong YouTube <-> YT Music theo tab", /updateYouTubeDockLabel\(\)/.test(swift) && /isMusic \? "YT Music" : "YouTube"/.test(swift) && /waveform\.circle\.fill" : "play\.rectangle\.fill"/.test(swift));
 check("H15 khoi Thong ke gon tren iPhone (an muc tieu ngay)", /\.fg-ios \.progress-wrap\s*\{\s*display:\s*none/.test(require("fs").readFileSync(path.join(__dirname, "..", "mobile", "popup-mobile.css"), "utf8")));
 
+const buildSh = require("fs").readFileSync(path.join(__dirname, "..", "ios", "build-ipa.sh"), "utf8");
+check("H16 doi so khoi dong -fgOpenPanel/-fgPanelLarge/-fgTabMusic (chi de chup anh)", /-fgOpenPanel/.test(swift) && /-fgPanelLarge/.test(swift) && /-fgTabMusic/.test(swift) && /didApplyLaunchArguments/.test(swift));
+check("H17 build-ipa.sh: che do Simulator qua FG_SIMULATOR, mac dinh van la iphoneos", buildSh.includes('FG_SDK="iphoneos"') && buildSh.includes('FG_SIMULATOR:-0') && buildSh.includes('-sdk "$FG_SDK"'));
+check("H18 build-ipa.sh: duong build thiet bi khong doi (van ky ad-hoc + dong goi .ipa)", buildSh.includes("codesign --force --sign -") && buildSh.includes("zip -qr"));
+
 console.log(results.join("\n"));
 process.exit(results.some((r) => r.startsWith("FAIL")) ? 1 : 0);

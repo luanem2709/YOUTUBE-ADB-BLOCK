@@ -640,7 +640,7 @@
     const GRACE_MS = 1500; // (không còn dùng để chờ — xem graceOver trong handleAd)
 
     // Có nút "Bỏ qua" nhưng QC vẫn chạy sau từng này ms → seek tới cuối QC ngay.
-    const SEEK_AFTER_MS = 200;
+    const SEEK_AFTER_MS = 80;
 
     // Sau khi bấm nút "Bỏ qua", nếu QC vẫn còn (YouTube chưa chuyển sang video chính) thì
     // phải có phương án dự phòng: tua 16x + seek tới cuối. Nếu không, QC cứ chạy tới hết

@@ -190,6 +190,16 @@
                 arrParsed[0].playerResponse.adPlacements.length === 0 && arrParsed[0].playerResponse.streamingData.formats.length === 1 && arrParsed[1].other === 1);
             check("N32 isPlayerApi KHONG mong get_watch (da do: treo ~4.8s)", N.isPlayerApi("https://www.youtube.com/youtubei/v1/get_watch") === false);
 
+            // 12c. Cầu chì bắt video đứng âm thầm (đồng hồ giả): chỉ nổ sau 15s liên tục, chỉ khi vừa gỡ QC
+            const stallVid = document.createElement("video"); document.body.appendChild(stallVid);
+            window.__fgNet.forced = false; window.__fgNet.stripped = 1; window.__fgNet.lastStripAt = Date.now();
+            const T0 = Date.now();
+            check("N33 video chua phat <15s -> chua ngat", N.checkStall(T0) === false && N.checkStall(T0 + 14000) === false && window.__fgNet.forced === false);
+            check("N34 video dung >=15s sau khi go QC -> cau chi no", N.checkStall(T0 + 16000) === true && window.__fgNet.forced === true);
+            window.__fgNet.forced = false; window.__fgNet.lastStripAt = Date.now() - 120000;
+            check("N35 lan go QC da cu (>60s) -> khong ngat", N.checkStall(T0 + 40000) === false && window.__fgNet.forced === false);
+            window.__fgNet.stripped = 0; stallVid.remove();
+
             // 13. Móc fetch /youtubei/v1/player (BẬT LẠI) + cầu chì
             window.__fgNet.forced = false;
             const r1 = await (await window.fetch("https://www.youtube.com/youtubei/v1/player?key=x")).json();

@@ -1,5 +1,12 @@
 ﻿# Changelog
 
+## [Chưa phát hành] — Cầu chì bắt đứng hình, seek sớm hơn, chụp ảnh Simulator
+
+### Thêm / sửa
+- **Cầu chì bắt video đứng âm thầm** (`content-yt-net.js` `checkStall`): sau khi vừa gỡ QC (trong 60s), nếu video không bắt đầu phát (`currentTime<0.5`, `readyState<3`, không phải QC, tab đang hiện) liên tục **15 giây** thì tự ngắt lớp mạng 24 giờ + tải lại 1 lần. Ngưỡng 15s vì khởi động chậm bình thường tới ~7s (đo thật). Test N33–N35 (đồng hồ giả).
+- **Seek sớm hơn:** `SEEK_AFTER_MS` 200 → 80ms. Đo thật: QC 15,1s chỉ còn hiện 0,27s (trước: 0,56–0,63s với 200ms; 1,8–2,0s trước khi bỏ GRACE).
+- **Chụp ảnh iPhone Simulator** (`.github/workflows/ios-simulator.yml`, chạy tay): build app cho Simulator (`FG_SIMULATOR=1 ios/build-ipa.sh`, đường build thiết bị giữ nguyên), mở app với đối số khởi động `-fgOpenPanel` / `-fgPanelLarge` / `-fgTabMusic` (chỉ để kiểm thử) và chụp 4 màn hình vào Artifacts. **Chưa chạy thử trên runner macOS thật.**
+
 ## [Chưa phát hành] — Nâng cấp: canary quảng cáo, giao diện iPhone, CI
 
 ### Thêm / sửa

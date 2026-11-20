@@ -261,6 +261,24 @@
         } catch { /* ignore */ }
     };
 
+    // ---------- Cầu chì bắt video "đứng" âm thầm ----------
+    // Ngoài lỗi hiện rõ (.ytp-error) còn có ca video không bao giờ bắt đầu phát sau khi đã gỡ QC (không có thông báo lỗi).
+    // Khởi động chậm bình thường tới ~7s (đo thật) → chỉ ngắt sau STALL_MS liên tục, và chỉ khi vừa gỡ QC trong 60s qua.
+    const STALL_MS = 15000;
+    let stallSince = 0;
+    function checkStall(now) {
+        if (S.forced || !S.stripped || !S.lastStripAt || now - S.lastStripAt > 60000) { stallSince = 0; return false; }
+        const v = document.querySelector("video");
+        const p = document.querySelector(".html5-video-player");
+        const adNow = !!(p && /ad-showing|ad-interrupting/.test(p.className));
+        const stalled = !!v && !document.hidden && !adNow && v.currentTime < 0.5 && v.readyState < 3;
+        if (!stalled) { stallSince = 0; return false; }
+        if (!stallSince) stallSince = now;
+        if (now - stallSince >= STALL_MS) { S.trip(); return true; }
+        return false;
+    }
+    setInterval(() => { try { checkStall(Date.now()); } catch { /* ignore */ } }, 2000);
+
     // ---------- Móc fetch / XHR của /youtubei/v1/player ----------
     function rebuildResponse(res, text) {
         const headers = new Headers(res.headers);
@@ -337,6 +355,7 @@
         window.__FG_TEST__.net = {
             sanitizeObject,
             sanitizeText,
+            checkStall,
             isPlayerApi,
             shouldStrip: () => shouldStrip(),
             state: S,

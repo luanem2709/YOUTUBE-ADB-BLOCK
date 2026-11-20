@@ -21,6 +21,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
     private var panelContainer: UIView?
     private var panelWebView: WKWebView?
     private var panelSegment: UISegmentedControl?
+    /// Bảng điều khiển có 2 mức như sheet iOS: nửa màn hình (xem được video phía trên) và toàn màn hình.
+    private enum PanelDetent { case medium, large }
+    private var panelDetent: PanelDetent = .medium
+    private var panelHeightConstraint: NSLayoutConstraint?
     private var currentPanelPage: String = ""
     private var oauthContainer: UIView?
     private var oauthWebView: WKWebView?
@@ -102,7 +106,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         super.viewWillTransition(to: size, with: coordinator)
         coordinator.animate(alongsideTransition: { _ in
             self.updateBarVisibility(for: size)
-        }, completion: nil)
+        }, completion: { _ in
+            self.panelHeightConstraint?.constant = self.panelHeight(for: self.panelDetent)
+            self.view.layoutIfNeeded()
+        })
     }
 
     private func updateBarVisibility(for size: CGSize) {
@@ -1255,7 +1262,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         view.insertSubview(container, belowSubview: bottomBar)
 
         NSLayoutConstraint.activate([
-            container.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
+            container.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
             container.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             container.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
@@ -1282,8 +1289,44 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
             pWeb.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
 
+        // Chiều cao ưu tiên thấp hơn ràng buộc đỉnh (>= safe area) → mức "large" chỉ cần số rất lớn.
+        let heightC = container.heightAnchor.constraint(equalToConstant: panelHeight(for: .medium))
+        heightC.priority = .defaultHigh
+        heightC.isActive = true
+        panelHeightConstraint = heightC
+        panelDetent = .medium
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(onSheetHeaderTap))
+        header.addGestureRecognizer(tap)
+
         panelContainer = container
         panelWebView = pWeb
+    }
+
+    private func panelHeight(for detent: PanelDetent) -> CGFloat {
+        if detent == .large { return 10000 }
+        // Ngang màn hình (thanh dưới bị ẩn, video thấp): dùng toàn bộ để vẫn đủ chỗ thao tác.
+        if view.bounds.width > view.bounds.height { return 10000 }
+        return max(320, (view.bounds.height * 0.52).rounded())
+    }
+
+    private func setPanelDetent(_ detent: PanelDetent, animated: Bool = true) {
+        panelDetent = detent
+        panelHeightConstraint?.constant = panelHeight(for: detent)
+        let apply = {
+            self.panelContainer?.transform = .identity
+            self.view.layoutIfNeeded()
+        }
+        if animated {
+            UIView.animate(withDuration: 0.28, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0.6, options: [.allowUserInteraction, .curveEaseOut], animations: apply, completion: nil)
+        } else {
+            apply()
+        }
+    }
+
+    @objc private func onSheetHeaderTap() {
+        triggerHaptic(style: .light)
+        setPanelDetent(panelDetent == .medium ? .large : .medium)
     }
 
     private func openPanel(page: String) {
@@ -1292,6 +1335,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         ensurePanelCreated()
 
         let wasHidden = panelContainer?.isHidden ?? false
+        if isNewSheet || wasHidden { setPanelDetent(.medium, animated: false) }
         panelContainer?.isHidden = false
 
         // Luôn nạp Bảng điều khiển chính (popup.html) một lần duy nhất để mở tức thì (0ms)
@@ -1313,13 +1357,22 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
 
     @objc private func onSheetHeaderPan(_ gesture: UIPanGestureRecognizer) {
         guard let c = panelContainer else { return }
-        let dy = max(0, gesture.translation(in: view).y)
+        let dy = gesture.translation(in: view).y
         switch gesture.state {
         case .changed:
-            c.transform = CGAffineTransform(translationX: 0, y: dy)
+            // Kéo xuống: bảng đi theo tay. Kéo lên: chờ lúc thả tay để nâng lên toàn màn hình.
+            c.transform = CGAffineTransform(translationX: 0, y: max(0, dy))
         case .ended, .cancelled:
             let vy = gesture.velocity(in: view).y
-            if dy > 110 || vy > 650 {
+            let wantsUp = dy < -50 || vy < -500
+            let wantsDown = dy > 90 || vy > 650
+            if wantsUp && panelDetent == .medium {
+                triggerHaptic(style: .light)
+                setPanelDetent(.large)
+            } else if wantsDown && panelDetent == .large {
+                triggerHaptic(style: .light)
+                setPanelDetent(.medium)
+            } else if wantsDown {
                 onClosePanelTapped()
             } else {
                 UIView.animate(withDuration: 0.22, delay: 0, usingSpringWithDamping: 0.88, initialSpringVelocity: 0.5, options: [.allowUserInteraction], animations: {

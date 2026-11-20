@@ -531,3 +531,64 @@ window.__fgInitDiagCard = initDiagCard;
 initTabs();
 applyLicenseGate();
 initDiagCard();
+
+// ---------- Giao diện điện thoại (iOS/Android): gom nhóm gập được, kiểu danh sách Cài đặt của iOS ----------
+// Chỉ chạy khi có cầu nối native iOS hoặc màn hình cảm ứng. Giao diện máy tính không bị ảnh hưởng.
+function initMobileGroups() {
+    const shell = $("appShell");
+    if (!shell) return;
+    const touch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    if (!nativeBridge() && !window.__FG_IOS_VERSION__ && !touch) return;
+    if (shell.classList.contains("fg-ios")) return;
+    shell.classList.add("fg-ios");
+
+    const cards = shell.querySelectorAll("#panel-settings .card");
+    Array.prototype.forEach.call(cards, (card, idx) => {
+        const title = card.querySelector(".card-title");
+        const stack = card.querySelector(".setting-stack");
+        if (!title || !stack) return;
+        card.classList.add("fg-group");
+        const open = idx === 0; // chỉ nhóm "Loại quảng cáo" mở sẵn
+        card.classList.toggle("fg-collapsed", !open);
+        title.setAttribute("role", "button");
+        title.setAttribute("tabindex", "0");
+        title.setAttribute("aria-expanded", open ? "true" : "false");
+
+        const count = document.createElement("span");
+        count.className = "fg-group-count";
+        title.appendChild(count);
+        const refresh = () => {
+            const boxes = stack.querySelectorAll('input[type="checkbox"]');
+            let on = 0;
+            Array.prototype.forEach.call(boxes, (b) => { if (b.checked) on++; });
+            count.textContent = boxes.length ? on + "/" + boxes.length : "";
+        };
+        refresh();
+        stack.addEventListener("change", refresh);
+        // Trạng thái công tắc được nạp bất đồng bộ từ storage → cập nhật lại sau khi nạp xong
+        setTimeout(refresh, 400);
+        setTimeout(refresh, 1500);
+
+        const toggle = () => {
+            const collapsed = card.classList.toggle("fg-collapsed");
+            title.setAttribute("aria-expanded", collapsed ? "false" : "true");
+            refresh();
+        };
+        title.addEventListener("click", toggle);
+        title.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                toggle();
+            }
+        });
+    });
+
+    // Chạm vào hàng số liệu để xem/ẩn chi tiết theo loại (mặc định ẩn cho gọn)
+    const grid = shell.querySelector(".stats-grid");
+    if (grid) {
+        grid.setAttribute("role", "button");
+        grid.setAttribute("tabindex", "0");
+        grid.addEventListener("click", () => shell.classList.toggle("fg-stats-open"));
+    }
+}
+initMobileGroups();

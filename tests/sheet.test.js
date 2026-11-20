@@ -1,0 +1,23 @@
+// Kiểm tra tĩnh bảng điều khiển iOS 2 mức (nửa màn hình / toàn màn hình). Swift không chạy được trên Windows,
+// nên test này chỉ đảm bảo các thành phần bắt buộc còn đủ; hành vi thật phải thử trên iPhone / macOS CI.
+const fs = require("fs");
+const path = require("path");
+const swift = fs.readFileSync(path.join(__dirname, "..", "ios", "ViewController.swift"), "utf8").replace(/\r\n/g, "\n");
+const results = [];
+const check = (name, cond) => results.push((cond ? "PASS " : "FAIL ") + name);
+
+check("H1 co 2 muc PanelDetent medium/large", /enum PanelDetent\s*\{\s*case medium, large\s*\}/.test(swift));
+check("H2 dinh bang >= safe area (khong co dinh cung de che het man hinh)",
+    /container\.topAnchor\.constraint\(greaterThanOrEqualTo: view\.safeAreaLayoutGuide\.topAnchor/.test(swift) &&
+    !/container\.topAnchor\.constraint\(equalTo: view\.safeAreaLayoutGuide\.topAnchor, constant: 6\)/.test(swift));
+check("H3 chieu cao uu tien thap hon rang buoc dinh (.defaultHigh)", /heightC\.priority = \.defaultHigh/.test(swift));
+check("H4 muc medium cao ~52% man hinh", /view\.bounds\.height \* 0\.52/.test(swift));
+check("H5 keo len nang medium -> large", /wantsUp && panelDetent == \.medium[\s\S]{0,80}setPanelDetent\(\.large\)/.test(swift));
+check("H6 keo xuong large -> medium, medium -> dong", /wantsDown && panelDetent == \.large[\s\S]{0,80}setPanelDetent\(\.medium\)/.test(swift) && /else if wantsDown \{\s*onClosePanelTapped\(\)/.test(swift));
+check("H7 cham header doi muc", /onSheetHeaderTap[\s\S]{0,200}setPanelDetent\(panelDetent == \.medium \? \.large : \.medium\)/.test(swift));
+check("H8 luon mo o muc nua man hinh", /if isNewSheet \|\| wasHidden \{ setPanelDetent\(\.medium, animated: false\) \}/.test(swift));
+check("H9 tinh lai chieu cao khi xoay man hinh", /completion: \{ _ in\s*self\.panelHeightConstraint\?\.constant = self\.panelHeight\(for: self\.panelDetent\)/.test(swift));
+check("H10 ngang man hinh dung toan bo (thanh duoi bi an)", /view\.bounds\.width > view\.bounds\.height \{ return 10000 \}/.test(swift));
+
+console.log(results.join("\n"));
+process.exit(results.some((r) => r.startsWith("FAIL")) ? 1 : 0);

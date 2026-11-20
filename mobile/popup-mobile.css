@@ -222,3 +222,139 @@ body {
         animation-duration: 0.01ms !important;
     }
 }
+
+/* ===== Thiết kế lại kiểu iOS "Cài đặt": nhóm gập được, danh sách liền mạch =====
+   Chỉ áp dụng khi popup.js gắn lớp .fg-ios (app iOS / màn hình cảm ứng). */
+.fg-ios .logo-wrap {
+    width: 40px;
+    height: 40px;
+}
+
+.fg-ios .card {
+    padding: 14px 16px !important;
+    margin-bottom: 0 !important;
+    border-radius: 14px !important;
+}
+
+/* Số liệu: 3 ô gọn, chi tiết theo loại ẩn cho tới khi chạm vào */
+.fg-ios .breakdown-grid {
+    display: none !important;
+}
+
+.fg-ios.fg-stats-open .breakdown-grid {
+    display: grid !important;
+}
+
+.fg-ios .stats-grid {
+    cursor: pointer;
+}
+
+/* Nhóm cài đặt */
+.fg-ios .card.fg-group {
+    padding: 0 !important;
+    overflow: hidden;
+    background: rgba(28, 28, 30, 0.92) !important;
+}
+
+.fg-ios .fg-group .card-title {
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    margin: 0 !important;
+    padding: 0 16px !important;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #fff;
+    cursor: pointer;
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.08);
+}
+
+.fg-ios .fg-group .card-title:active {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.fg-ios .fg-group-count {
+    margin-left: auto;
+    margin-right: 10px;
+    font-size: 14px;
+    font-weight: 400;
+    color: rgba(235, 235, 245, 0.55);
+}
+
+.fg-ios .fg-group .card-title::after {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid rgba(235, 235, 245, 0.4);
+    border-bottom: 2px solid rgba(235, 235, 245, 0.4);
+    transform: rotate(45deg);
+    margin-top: -3px;
+    transition: transform 0.2s ease;
+}
+
+.fg-ios .fg-group.fg-collapsed .card-title::after {
+    transform: rotate(-45deg);
+    margin-top: 0;
+}
+
+.fg-ios .fg-group.fg-collapsed .setting-stack {
+    display: none;
+}
+
+.fg-ios .fg-group .setting-stack {
+    gap: 0;
+}
+
+.fg-ios .fg-group .setting-tile {
+    min-height: 56px;
+    padding: 10px 16px;
+    border: 0 !important;
+    border-top: 0.5px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+}
+
+/* Bỏ icon tròn màu để danh sách thoáng, chữ to hơn theo chuẩn đọc trên iPhone */
+.fg-ios .fg-group .setting-icon {
+    display: none;
+}
+
+.fg-ios .fg-group .setting-text h3 {
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.fg-ios .fg-group .setting-text p {
+    font-size: 12.5px;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Hàng nút: "Tải lại tab" chiếm cả hàng, hai nút phụ chia đôi — thẳng hàng, dễ bấm một tay */
+.fg-ios .btn-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.fg-ios .btn-row .btn {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+    grid-column: auto !important;
+}
+
+.fg-ios .btn-row #refreshTabBtn {
+    grid-column: 1 / -1 !important;
+}
+
+.fg-ios .btn-row .btn {
+    font-size: 13px;
+    line-height: 1.25;
+    padding: 8px 6px;
+}

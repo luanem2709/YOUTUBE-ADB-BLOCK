@@ -1,6 +1,6 @@
 # FUNNYGAME — Chặn Quảng Cáo YouTube & Spotify
 
-**v2.4.11** · Extension Chrome / Mobile / Safari (Manifest V3) · Giao diện tiếng Việt · **LuanEm2709**
+**v2.4.15** · Extension Chrome / Mobile / Safari (Manifest V3) · Giao diện tiếng Việt · **LuanEm2709**
 
 Chặn quảng cáo trên **YouTube** (thường, Shorts, Music, mobile web) và **Spotify Web Player**. Cần **Key authentic** để kích hoạt.
 
@@ -85,7 +85,7 @@ Khi YouTube/Spotify đổi giao diện, thêm selector vào [`release/remote-con
 ## Test
 
 ```bash
-npm test        # 223 test (Chrome headless + Node)
+npm test        # bộ test (Chrome headless + Node)
 npm run smoke   # quét lỗi runtime/console trên 9 trang test
 npm run build   # đóng gói + kiểm tra gói build
 ```
@@ -104,14 +104,14 @@ Extension tự nâng cấp khi có bản mới (qua `release/update.xml` + CRX).
 
 ### 2. Trình duyệt Android hỗ trợ Extension (Lemur, Quetta, Yandex)
 
-Chạy lệnh đóng gói bản điện thoại (`dist/funnygame-mobile-v2.4.11.zip`):
+Chạy lệnh đóng gói bản điện thoại (`dist/funnygame-mobile-v2.4.15.zip`):
 ```bash
 node scripts/build-mobile.js
 ```
 
 ### 3. Bộ nguồn Safari iOS (Xcode / Web Extension)
 
-Chạy lệnh tạo bộ nguồn Safari (`dist/funnygame-safari-source-v2.4.11.zip`):
+Chạy lệnh tạo bộ nguồn Safari (`dist/funnygame-safari-source-v2.4.15.zip`):
 ```bash
 node scripts/build-safari-source.js
 ```

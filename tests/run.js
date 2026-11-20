@@ -154,7 +154,7 @@ server.listen(PORT, async () => {
     }
     server.close();
 
-    for (const nodeTest of ["license.test.js", "server.test.js", "rules.test.js", "storage.test.js", "secrets.test.js", "diag.test.js", "compat.test.js", "bridge.test.js"]) {
+    for (const nodeTest of ["license.test.js", "server.test.js", "rules.test.js", "storage.test.js", "secrets.test.js", "diag.test.js", "compat.test.js", "bridge.test.js", "version.test.js", "sheet.test.js"]) {
         console.log("\n== " + nodeTest);
         try {
             const out = execFileSync(process.execPath, [path.join(__dirname, nodeTest)], { encoding: "utf8" });

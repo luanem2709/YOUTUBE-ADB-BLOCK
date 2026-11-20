@@ -555,8 +555,9 @@ function addBadge(p) { const b = document.createElement("div"); b.className = "y
   await sleep(700);
   check("33b het QC -> khoi phuc", v.playbackRate === 1 && !v.muted, `rate=${v.playbackRate} muted=${v.muted}`);
 
-  // 34. QC dài (>20s) CÓ nút "Bỏ qua" → phải BẤM NÚT (không tua 16x thẳng,
-  // vì tua trước khi nút nhận click → QC vẫn phát).
+  // 34. QC dài (>20s) CÓ nút "Bỏ qua" → phải BẤM NÚT ngay, và nếu QC vẫn còn sau ~200ms
+  // (nút chưa bấm được / click không ăn) thì tua 16x + seek cuối — KHÔNG chờ GRACE 1.5s như trước
+  // (đo thật: khung "Bỏ qua" có từ 0ms nên chờ nút chỉ làm QC chạy 1x thêm ~1.5s).
   v.duration = 45; v.currentTime = 1; v.playbackRate = 1; v.muted = false;
   mp.classList.add("ad-showing");
   const badge34 = addBadge(mp);
@@ -569,7 +570,7 @@ function addBadge(p) { const b = document.createElement("div"); b.className = "y
   mp.querySelector(".video-ads").appendChild(btn34);
   await sleep(600);
   check("34 QC dai co nut -> da bam nut Bo qua", clicked34 > 0, `clicks=${clicked34}`);
-  check("34b QC co nut -> KHONG tua 16x (cho nut an)", v.playbackRate !== 16, `rate=${v.playbackRate}`);
+  check("34b QC co nut nhung con sau 200ms -> tua 16x (khong cho nut)", v.playbackRate === 16, `rate=${v.playbackRate}`);
   mp.classList.remove("ad-showing"); badge34.remove(); btn34.remove();
   v.duration = 400; v.currentTime = 0; v.muted = false;
   await sleep(700);

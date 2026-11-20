@@ -637,7 +637,10 @@
 
     // Thời gian chờ (tính từ lúc vào QC) trước khi tua 16x QC DÀI khi chưa thấy nút "Bỏ qua".
     // YouTube thường hiện nút "Bỏ qua" sau ~5s; nếu tua quá sớm thì QC vẫn chạy tới hết.
-    const GRACE_MS = 1500;
+    const GRACE_MS = 1500; // (không còn dùng để chờ — xem graceOver trong handleAd)
+
+    // Có nút "Bỏ qua" nhưng QC vẫn chạy sau từng này ms → seek tới cuối QC ngay.
+    const SEEK_AFTER_MS = 200;
 
     // Sau khi bấm nút "Bỏ qua", nếu QC vẫn còn (YouTube chưa chuyển sang video chính) thì
     // phải có phương án dự phòng: tua 16x + seek tới cuối. Nếu không, QC cứ chạy tới hết
@@ -770,7 +773,9 @@
         // QC ngắn: không cần chờ.
         // Chưa thấy nút "Bỏ qua" thì chờ cũng vô ích (nút YouTube chỉ hiện sau ~5s của QC 1x) → tua ngay,
         // không giữ QC chạy 1x thêm GRACE_MS. Chỉ chờ khi nút đã hiện: để bấm nút ăn trước (tránh QC kế tiếp hiện liên tục).
-        const graceOver = !isLongAd || adAge >= GRACE_MS || !skipBtnPresent;
+        // Đo thật trên YouTube (QC 76s): khung "Bỏ qua" (.ytp-ad-skip-button-slot) có từ 0ms nên bị coi là "có nút"
+        // → QC cứ chạy 1x đúng GRACE_MS (≈1.5s) rồi mới tua. Chờ nút vô ích (nút thật chỉ bấm được sau ~5s) → bỏ chờ.
+        const graceOver = true;
 
         // Đã bấm nút "Bỏ qua" từ trước nhưng QC vẫn còn → dự phòng seek cuối
         const skipFallbackOver = !!st.skipClickedAt && (Date.now() - st.skipClickedAt) >= SKIP_FALLBACK_MS;
@@ -802,7 +807,9 @@
                 //    Nếu KHÔNG có nút (hoặc đã bấm mà không ăn → forceSeekEnd) → seek tới cuối QC.
                 //    Seek KHÔNG cần buffer: Chrome tự tải phần còn lại (vài KB) — nhanh hơn nhiều
                 //    so với việc phải đợi tua 16x chạy tới hết QC.
-                const canSeekEnd = forceSeekEnd || !skipBtnPresent;
+                // Nút "Bỏ qua" (nếu có và bấm được) vẫn được bấm ở đầu hàm; nếu sau SEEK_AFTER_MS QC vẫn còn
+                // thì seek thẳng tới cuối — không chờ nút (trước đây phải chờ tới SKIP_FALLBACK_MS sau cú bấm).
+                const canSeekEnd = forceSeekEnd || !skipBtnPresent || adAge >= SEEK_AFTER_MS;
                 if (!st.seekedEnd && canSeekEnd && video.currentTime < d - 0.3) {
                     st.seekedEnd = true;
                     fgHandleStats.seekEnd++;

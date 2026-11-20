@@ -1,5 +1,11 @@
 ﻿# Changelog
 
+## [Chưa phát hành] — Rút ngắn thời gian quảng cáo còn hiện
+
+### Sửa
+- **`content-main.js` — bỏ chờ GRACE 1,5 giây ở quảng cáo dài.** Đo thật trên YouTube (PC, QC 76 giây): khung "Bỏ qua" (`.ytp-ad-skip-button-slot`) có mặt từ 0ms nên bị coi là "đã có nút" → quảng cáo cứ chạy 1x đúng ~1,5 giây rồi mới tua. Nay: bấm nút nếu có, và nếu quảng cáo còn sau `SEEK_AFTER_MS` (200ms) thì tua 16x + seek tới cuối ngay. Quảng cáo chỉ còn hiện khoảng 0,5 giây (trước đó 1,8–2,0 giây với QC 15–76 giây).
+- `tests/main.html` 34b cập nhật theo chính sách mới. Tổng: 426 PASS, 0 FAIL. Mẫu đo thật còn nhỏ (vài lần gặp quảng cáo), chưa thử trên iPhone.
+
 ## [Chưa phát hành] — CI: đăng IPA lên GitHub Releases
 
 ### Thay đổi

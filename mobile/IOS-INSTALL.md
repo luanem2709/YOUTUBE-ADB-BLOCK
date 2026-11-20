@@ -1,14 +1,14 @@
 # Cài FUNNYGAME trên iPhone / iPad (iOS & iPadOS)
 
 Bộ cài iOS của **FUNNYGAME** gồm 2 định dạng:
-1. **`release/funnygame-ios.ipa`** — File ứng dụng iOS độc lập (2-trong-1: vừa là **App xem YouTube / YT Music / Spotify chặn quảng cáo toàn màn hình + phát nền khi tắt màn hình + PiP + khoá Key bản quyền FUNNYGAME**, vừa đính kèm **Safari Web Extension**).
+1. **`funnygame-ios.ipa`** — File ứng dụng iOS độc lập (2-trong-1: vừa là **App xem YouTube / YT Music / Spotify chặn quảng cáo toàn màn hình + phát nền khi tắt màn hình + PiP + khoá Key bản quyền FUNNYGAME**, vừa đính kèm **Safari Web Extension**).
 2. **`dist/funnygame-safari-source-*.zip`** — Bộ nguồn Safari Web Extension dành cho người tự ký bằng Xcode hoặc cài qua trình duyệt **Orion Browser**.
 
 ---
 
 ## Cách 1: Cài trực tiếp file `funnygame-ios.ipa` (Không cần máy Mac)
 
-Bạn có thể tải file **`release/funnygame-ios.ipa`** trực tiếp từ thư mục `release/` trên GitHub (hoặc mục **Actions → Build iOS IPA → Artifacts**) và cài vào iPhone/iPad bằng một trong các công cụ quen thuộc:
+Bạn có thể tải file **`funnygame-ios.ipa`** trực tiếp từ [GitHub Releases](https://github.com/luanem2709/YOUTUBE-ADB-BLOCK/releases/tag/ios-latest) (link cố định: `https://github.com/luanem2709/YOUTUBE-ADB-BLOCK/releases/download/ios-latest/funnygame-ios.ipa`; hoặc mục **Actions → Build iOS IPA → Artifacts**) và cài vào iPhone/iPad bằng một trong các công cụ quen thuộc:
 
 - **Sideloadly** (trên Windows / macOS):
   1. Cắm iPhone vào máy tính, mở **Sideloadly**.

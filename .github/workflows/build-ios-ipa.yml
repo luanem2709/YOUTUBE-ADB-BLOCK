@@ -19,6 +19,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-ios-ipa
+  cancel-in-progress: false
+
 jobs:
   build-ipa:
     runs-on: macos-latest
@@ -46,13 +50,19 @@ jobs:
             dist/funnygame-ios-v*.ipa
           retention-days: 90
 
-      - name: Lưu file release/funnygame-ios.ipa vào kho mã nguồn
+      # IPA được đăng lên GitHub Releases (tag cố định "ios-latest") thay vì commit vào kho mã nguồn:
+      # không còn commit tự động bởi bot, repo không phình dần vì file nhị phân.
+      # Link tải cố định: https://github.com/<owner>/<repo>/releases/download/ios-latest/funnygame-ios.ipa
+      - name: Đăng IPA lên GitHub Releases (ios-latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add release/funnygame-ios.ipa
-          if ! git diff --staged --quiet; then
-            git commit -m "chore(ios): cap nhat goi cai dat release/funnygame-ios.ipa [skip ci]"
-            git pull --rebase origin main
-            git push origin main
-          fi
+          VERSION=$(node -p "require('./package.json').version")
+          cp release/funnygame-ios.ipa "funnygame-ios-v${VERSION}.ipa"
+          gh release delete ios-latest --cleanup-tag --yes || true
+          gh release create ios-latest \
+            release/funnygame-ios.ipa "funnygame-ios-v${VERSION}.ipa" \
+            --target "${{ github.sha }}" \
+            --title "FUNNYGAME iOS v${VERSION} (bản mới nhất)" \
+            --notes "Bản build tự động từ commit ${{ github.sha }}. Tải funnygame-ios.ipa rồi cài bằng Sideloadly / AltStore (xem mobile/IOS-INSTALL.md)." \
+            --prerelease

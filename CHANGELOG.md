@@ -1,5 +1,11 @@
 ﻿# Changelog
 
+## [Chưa phát hành] — CI: đăng IPA lên GitHub Releases
+
+### Thay đổi
+- **Workflow `build-ios-ipa.yml` không còn commit `release/funnygame-ios.ipa` vào `main` bằng bot.** IPA được đăng lên GitHub Releases (tag cố định `ios-latest`, kèm bản đặt tên theo phiên bản). Link tải cố định: `releases/download/ios-latest/funnygame-ios.ipa`. Repo không còn phình dần vì file nhị phân và không còn commit `github-actions[bot]`.
+- `release/funnygame-ios.ipa` bị gỡ khỏi git và thêm vào `.gitignore`; tài liệu `mobile/IOS-INSTALL.md` trỏ tới Releases.
+
 ## [Chưa phát hành] — Giai đoạn 4: Giao diện iPhone kiểu iOS gốc
 
 ### Giao diện

@@ -19,5 +19,9 @@ check("H8 luon mo o muc nua man hinh", /if isNewSheet \|\| wasHidden \{ setPanel
 check("H9 tinh lai chieu cao khi xoay man hinh", /completion: \{ _ in\s*self\.panelHeightConstraint\?\.constant = self\.panelHeight\(for: self\.panelDetent\)/.test(swift));
 check("H10 ngang man hinh dung toan bo (thanh duoi bi an)", /view\.bounds\.width > view\.bounds\.height \{ return 10000 \}/.test(swift));
 
+check("H11 thanh duoi chi con 4 nut: khong con YT Music rieng", !/"YT Music", #selector/.test(swift) && /"YouTube", #selector\(onTapYouTube\)/.test(swift));
+check("H12 nut YouTube nho tab gan nhat (0/1) + nhan giu de chon", /youTubeFamilyTab = index/.test(swift) && /switchToTab\(youTubeFamilyTab\)/.test(swift) && /onLongPressYouTube/.test(swift));
+check("H13 anh xa tab -> nut dock: 0,1->0; 2->1; 4->3", /case 0, 1: return 0[\s\S]{0,40}case 2: return 1[\s\S]{0,40}case 4: return 3/.test(swift) && /if idx == 3 \{/.test(swift));
+
 console.log(results.join("\n"));
 process.exit(results.some((r) => r.startsWith("FAIL")) ? 1 : 0);

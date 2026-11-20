@@ -472,7 +472,7 @@ const previewHtml = `<!DOCTYPE html>
             border: none;
             background: #06070d;
         }
-        /* Thanh Dock 5 nút chuẩn iOS ở dưới cùng */
+        /* Thanh Dock 4 nút (YouTube + YT Music gộp 1, nhấn giữ để chọn) chuẩn iOS ở dưới cùng */
         .ios-dock {
             height: 54px;
             background: rgba(14, 16, 24, 0.94);
@@ -707,13 +707,10 @@ const previewHtml = `<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- Thanh Dock 5 nút chuẩn Apple SF Symbols iPhone -->
+            <!-- Thanh Dock 4 nút (YouTube + YT Music gộp 1, nhấn giữ để chọn) chuẩn Apple SF Symbols iPhone -->
             <nav class="ios-dock">
                 <button type="button" class="ios-dock-btn" id="dockYt" onclick="closePanel()">
                     <span class="dock-ico">▶️</span><span>YouTube</span>
-                </button>
-                <button type="button" class="ios-dock-btn" onclick="closePanel()">
-                    <span class="dock-ico">🎵</span><span>YT Music</span>
                 </button>
                 <button type="button" class="ios-dock-btn" onclick="closePanel()">
                     <span class="dock-ico">🎧</span><span>Spotify</span>

@@ -182,6 +182,14 @@
                 window.ytInitialPlayerResponse.adSlots.length === 0,
                 `len=${window.ytInitialPlayerResponse.adPlacements.length} delay=${dt}ms`);
 
+            // 12b. Phản hồi dạng MẢNG (get_watch): [{ playerResponse: { adPlacements, ... } }, {...}]
+            const arrRes = JSON.parse(JSON.stringify([{ playerResponse: PLAYER_RESPONSE }, { other: 1 }]));
+            const arrTxt = N.sanitizeText(JSON.stringify(arrRes));
+            const arrParsed = JSON.parse(arrTxt);
+            check("N31 sanitizeText xu ly phan hoi dang MANG (get_watch)",
+                arrParsed[0].playerResponse.adPlacements.length === 0 && arrParsed[0].playerResponse.streamingData.formats.length === 1 && arrParsed[1].other === 1);
+            check("N32 isPlayerApi KHONG mong get_watch (da do: treo ~4.8s)", N.isPlayerApi("https://www.youtube.com/youtubei/v1/get_watch") === false);
+
             // 13. Móc fetch /youtubei/v1/player (BẬT LẠI) + cầu chì
             window.__fgNet.forced = false;
             const r1 = await (await window.fetch("https://www.youtube.com/youtubei/v1/player?key=x")).json();

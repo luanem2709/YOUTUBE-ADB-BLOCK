@@ -96,6 +96,13 @@
         const d = typeof depth === "number" ? depth : 0;
         if (d > 3) return false;
         let changed = false;
+        // /youtubei/v1/get_watch (điều hướng SPA khi đổi clip) trả về MẢNG: [{ playerResponse: {...adPlacements...}, ... }, ...]
+        if (Array.isArray(obj)) {
+            for (let i = 0; i < obj.length && i < 8; i++) {
+                if (obj[i] && typeof obj[i] === "object" && sanitizeObject(obj[i], d)) changed = true;
+            }
+            return changed;
+        }
         for (let i = 0; i < AD_SLOT_KEYS.length; i++) {
             const k = AD_SLOT_KEYS[i];
             if (Array.isArray(obj[k]) && obj[k].length) {
@@ -116,7 +123,8 @@
     function sanitizeText(text) {
         if (typeof text !== "string" || !text) return text;
         const start = text.search(/\S/);
-        if (start < 0 || text.charCodeAt(start) !== 123) return text; // 123 = '{'
+        const c0 = start < 0 ? -1 : text.charCodeAt(start);
+        if (c0 !== 123 && c0 !== 91) return text; // 123 = '{', 91 = '['
         if (text.indexOf("adPlacements") === -1 && text.indexOf("playerAds") === -1 && text.indexOf("adSlots") === -1) {
             return text;
         }
@@ -186,6 +194,9 @@
 
     function isPlayerApi(url) {
         if (!url) return false;
+        // KHÔNG móc /youtubei/v1/get_watch (điều hướng SPA khi đổi clip): đã thử gỡ QC ở đó trên YouTube thật,
+        // YouTube vẫn tạo slot QC rỗng (class ad-created) và treo ~4.8s ở trạng thái buffering đen trước khi vào video chính
+        // — tệ hơn để QC hiện rồi bị tua (≈0.5s). Chỉ móc /player.
         return /\/youtubei\/v1\/player(\?|$)/.test(url);
     }
 

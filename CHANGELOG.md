@@ -1,5 +1,16 @@
 ﻿# Changelog
 
+## [Chưa phát hành] — Nâng cấp: canary quảng cáo, giao diện iPhone, CI
+
+### Thêm / sửa
+- **Canary quảng cáo hằng ngày** (`.github/workflows/ad-canary.yml` + `tests/canary.js`): mở YouTube thật (không đăng nhập), nạp script chặn, đổi clip liên tiếp; đỏ nếu mất player, lỗi phát video hoặc quảng cáo hiện quá `MAX_AD_SEC` (3s). Không nằm trong `npm test`.
+- **iPhone:** nút YouTube gộp đổi nhãn/biểu tượng theo tab đang dùng (YouTube ↔ YT Music); khối Thống kê trong bảng nửa màn hình gọn hơn (ẩn thanh mục tiêu, ô số liệu nhỏ).
+- **CI test:** `test.yml` chạy `npm test` thử lại tối đa 3 lần, lưu log từng lần (artifact `test-logs` khi lỗi) và cảnh báo nếu phải thử lại.
+- **README:** mô tả đúng lớp chặn mạng (chỉ `/player` + cầu chì), cách cài iPhone qua GitHub Releases, nút YouTube gộp.
+
+### Đã thử và KHÔNG áp dụng
+- Gỡ quảng cáo ở `/youtubei/v1/get_watch` (đường YouTube dùng khi đổi clip, trả về **mảng** `[{playerResponse:{adPlacements…}}]`): có gỡ được (số lần gỡ tăng) nhưng YouTube vẫn tạo slot QC rỗng và treo ~4.8s ở buffering đen → không tốt hơn tua QC (~0,5s). Lớp mạng vẫn chỉ móc `/player`. `sanitizeObject` nay xử lý được cả mảng (không ảnh hưởng hành vi).
+
 ## [Chưa phát hành] — Rút ngắn thời gian quảng cáo còn hiện
 
 ### Sửa

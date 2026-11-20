@@ -12,9 +12,9 @@ Nhập **Key authentic** trong popup (hoặc khi chạy trình cài đặt). Kh�
 
 ### Chặn quảng cáo YouTube (3 lớp tối ưu hiệu năng)
 
-1. **Lọc InnerTube ở tầng mạng** — file `content-yt-net.js` chạy trong MAIN world ở `document_start` (tức là **trước mã của YouTube**), hook `fetch` / `XMLHttpRequest` trên endpoint `/youtubei/v1/player` và gỡ `adPlacements`, `playerAds`, `adSlots` khỏi `playerResponse` → **YouTube không bao giờ nhận được danh sách quảng cáo** nên không tạo slot QC, không tải video QC, không hiện UI QC, không đen màn hình. Đồng thời dò `ytInitialPlayerResponse` / `ytcfg` / `ytplayer.config.args.player_response` để gỡ QC trước khi player đọc. Có **cầu chì tự phục hồi**: nếu gỡ QC làm video lỗi thì tự tắt lớp này và tải lại video bình thường
+1. **Lọc InnerTube ở tầng mạng (thử nghiệm, có cầu chì)** — `content-yt-net.js` chạy trong MAIN world ở `document_start` (trước mã của YouTube): móc `fetch` / `XMLHttpRequest` trên `/youtubei/v1/player` và dò `ytInitialPlayerResponse` để gỡ `adPlacements`, `playerAds`, `adSlots`. **Cầu chì tự ngắt:** nếu trình phát báo lỗi sau khi đã gỡ, lớp này tự tắt 24 giờ và tải lại trang đúng 1 lần. Giới hạn đã đo trên YouTube thật: khi **đổi clip** (điều hướng SPA) YouTube dùng `/youtubei/v1/get_watch` — đường này **không** được gỡ vì thử gỡ chỉ làm video treo ~5 giây ở màn hình đen; quảng cáo ở đó do lớp 3 xử lý
 2. **DNR** — chặn request tới domain quảng cáo (`doubleclick`, `pagead`, `googleadservices`, `/pagead/`, `ptracking`…)
-3. **DOM fallback thông minh** — gọi `player.skipAd()` ngay khi vào QC (bỏ qua tức thì, không cần đợi nút "Bỏ qua"), bấm nút bỏ qua, tua nhanh 16x, seek tới cuối QC, mute, ẩn banner/overlay, đóng popup chỉ khi phát hiện quảng cáo thực sự
+3. **DOM fallback thông minh** — gọi `player.skipAd()` ngay khi vào QC, bấm nút "Bỏ qua" nếu có, tua 16x và seek thẳng tới cuối QC sau ~200ms (đo thật: QC 15–76 giây chỉ còn hiện ≈0,5 giây), mute, ẩn banner/overlay, đóng popup chỉ khi phát hiện quảng cáo thực sự
 
 Hỗ trợ thêm:
 
@@ -109,14 +109,18 @@ Chạy lệnh đóng gói bản điện thoại (`dist/funnygame-mobile-v2.4.15.
 node scripts/build-mobile.js
 ```
 
-### 3. Bộ nguồn Safari iOS (Xcode / Web Extension)
+### 3. iPhone / iPad (app .ipa)
+
+Tải `funnygame-ios.ipa` từ [GitHub Releases](https://github.com/luanem2709/YOUTUBE-ADB-BLOCK/releases/tag/ios-latest) (link cố định, GitHub Actions tự đăng khi có commit vào `main`) rồi cài bằng Sideloadly / AltStore — xem `mobile/IOS-INSTALL.md`. Thanh dưới có 4 nút: **YouTube** (gộp YouTube + YT Music — nhấn giữ để chọn), Spotify, PiP, Cài đặt. Bảng điều khiển mở ở nửa màn hình (kéo lên để toàn màn hình).
+
+### 4. Bộ nguồn Safari iOS (Xcode / Web Extension)
 
 Chạy lệnh tạo bộ nguồn Safari (`dist/funnygame-safari-source-v2.4.15.zip`):
 ```bash
 node scripts/build-safari-source.js
 ```
 
-### 4. Lập trình viên (load unpacked)
+### 5. Lập trình viên (load unpacked)
 
 1. Clone / tải mã nguồn
 2. Mở `chrome://extensions/` → bật **Developer mode**

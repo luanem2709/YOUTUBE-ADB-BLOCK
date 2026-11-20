@@ -818,7 +818,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         }
 
         activeTabIndex = index
-        if index == 0 || index == 1 { youTubeFamilyTab = index }
+        if index == 0 || index == 1 {
+            youTubeFamilyTab = index
+            updateYouTubeDockLabel()
+        }
         highlightTab(index)
 
         let targetWv = getOrCreateWebView(for: index)
@@ -833,6 +836,17 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKSc
         currentWebView()?.reload()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
             sender.endRefreshing()
+        }
+    }
+
+    /// Nút đầu tiên của thanh dưới đổi nhãn/biểu tượng theo tab đang dùng: YouTube hoặc YT Music.
+    private func updateYouTubeDockLabel() {
+        guard let btn = tabButtons.first else { return }
+        let isMusic = (youTubeFamilyTab == 1)
+        if let lbl = btn.viewWithTag(102) as? UILabel { lbl.text = isMusic ? "YT Music" : "YouTube" }
+        if let icon = btn.viewWithTag(101) as? UIImageView {
+            let cfg = UIImage.SymbolConfiguration(pointSize: 16.5, weight: .semibold)
+            icon.image = UIImage(systemName: isMusic ? "waveform.circle.fill" : "play.rectangle.fill", withConfiguration: cfg)
         }
     }
 

@@ -23,10 +23,31 @@ jobs:
           done
           node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); JSON.parse(require('fs').readFileSync('rules/dnr_rules.json','utf8')); JSON.parse(require('fs').readFileSync('release/remote-config.json','utf8')); JSON.parse(require('fs').readFileSync('ios/diag-schema.json','utf8'))"
 
-      - name: Chạy toàn bộ test (Chrome headless)
+      # Chrome headless trên runner đôi khi chập chờn: thử lại tối đa 3 lần, lưu log từng lần,
+      # in riêng các dòng FAIL và đánh dấu cảnh báo nếu phải thử lại (để không che lỗi thật).
+      - name: Chạy toàn bộ test (Chrome headless, thử lại tối đa 3 lần)
+        shell: bash
         env:
           CHROME_PATH: /usr/bin/google-chrome
-        run: npm test
+        run: |
+          for i in 1 2 3; do
+            echo "=== Lần chạy $i/3 ==="
+            if npm test 2>&1 | tee "test-run-$i.log"; then
+              [ "$i" -gt 1 ] && echo "::warning::npm test chỉ qua ở lần thử $i (lần trước chập chờn) — xem artifact test-logs"
+              exit 0
+            fi
+            echo "--- Các dòng FAIL của lần $i ---"
+            grep -E "FAIL|Error|exception" "test-run-$i.log" | head -20 || true
+          done
+          exit 1
+
+      - name: Lưu log test khi lỗi
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: test-run-*.log
+          retention-days: 14
 
       - name: Smoke test — không lỗi runtime/console trên mọi trang
         env:

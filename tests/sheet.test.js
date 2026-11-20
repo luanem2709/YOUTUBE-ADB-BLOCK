@@ -23,5 +23,8 @@ check("H11 thanh duoi chi con 4 nut: khong con YT Music rieng", !/"YT Music", #s
 check("H12 nut YouTube nho tab gan nhat (0/1) + nhan giu de chon", /youTubeFamilyTab = index/.test(swift) && /switchToTab\(youTubeFamilyTab\)/.test(swift) && /onLongPressYouTube/.test(swift));
 check("H13 anh xa tab -> nut dock: 0,1->0; 2->1; 4->3", /case 0, 1: return 0[\s\S]{0,40}case 2: return 1[\s\S]{0,40}case 4: return 3/.test(swift) && /if idx == 3 \{/.test(swift));
 
+check("H14 nut dau doi nhan/bieu tuong YouTube <-> YT Music theo tab", /updateYouTubeDockLabel\(\)/.test(swift) && /isMusic \? "YT Music" : "YouTube"/.test(swift) && /waveform\.circle\.fill" : "play\.rectangle\.fill"/.test(swift));
+check("H15 khoi Thong ke gon tren iPhone (an muc tieu ngay)", /\.fg-ios \.progress-wrap\s*\{\s*display:\s*none/.test(require("fs").readFileSync(path.join(__dirname, "..", "mobile", "popup-mobile.css"), "utf8")));
+
 console.log(results.join("\n"));
 process.exit(results.some((r) => r.startsWith("FAIL")) ? 1 : 0);

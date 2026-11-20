@@ -768,7 +768,9 @@
         const adAge = Date.now() - (st.adStartAt || 0);
         // QC dài: chờ GRACE_MS để nút "Bỏ qua" có cơ hội xuất hiện (YouTube hiện sau ~5s).
         // QC ngắn: không cần chờ.
-        const graceOver = !isLongAd || adAge >= GRACE_MS;
+        // Chưa thấy nút "Bỏ qua" thì chờ cũng vô ích (nút YouTube chỉ hiện sau ~5s của QC 1x) → tua ngay,
+        // không giữ QC chạy 1x thêm GRACE_MS. Chỉ chờ khi nút đã hiện: để bấm nút ăn trước (tránh QC kế tiếp hiện liên tục).
+        const graceOver = !isLongAd || adAge >= GRACE_MS || !skipBtnPresent;
 
         // Đã bấm nút "Bỏ qua" từ trước nhưng QC vẫn còn → dự phòng seek cuối
         const skipFallbackOver = !!st.skipClickedAt && (Date.now() - st.skipClickedAt) >= SKIP_FALLBACK_MS;

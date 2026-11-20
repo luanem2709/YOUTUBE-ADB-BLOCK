@@ -119,7 +119,12 @@ html.fg-ad-active .ytp-ad-player-overlay,
 html.fg-ad-active .ytp-ad-player-overlay-layer,
 html.fg-ad-active .ytp-ad-action-interstitial,
 html.fg-ad-active .ytp-video-interstitial-buttoned-centered-layout,
-html.fg-ad-active .ytp-ad-survey-player-overlay {
+html.fg-ad-active .ytp-ad-survey-player-overlay,
+html.fg-ad-active .ytp-ad-simple-ad-badge,
+html.fg-ad-active .ytp-ad-badge,
+html.fg-ad-active .ytp-ad-text,
+html.fg-ad-active .ytp-ad-duration-remaining,
+html.fg-ad-active .ytp-ad-preview-container {
     opacity: 0 !important;
     pointer-events: none !important;
 }
